@@ -1,0 +1,4 @@
+node_modules/
+canvas-core/hls_output/
+canvas-core/tmp/
+.env
