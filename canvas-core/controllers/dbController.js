@@ -4,16 +4,13 @@ const Lock = require('../models/Lock');
 async function getLockByContentId(req, res) {
   try {
     const { contentId } = req.params;
-    console.log("Got contentId:", contentId);
-    const lock = await Lock.findOne({ contentId: contentId });
+    const lock = await Lock.findOne({ contentId });
     if (!lock) {
       return res.status(404).json({ message: "Lock not found." });
     }
-    console.log("Returning lock:");
-    console.log(lock);
-    return res.status(200).json({ lock });
+    return res.status(200).json(lock);
   } catch (error) {
-    console.error("Error in /get-lock-by-contentid:", error);
+    console.error("Error in getLockByContentId:", error);
     return res.status(500).json({ message: error.message });
   }
 }
@@ -25,9 +22,19 @@ async function getLockJsonObject(req, res) {
     if (!lock) {
       return res.status(404).json({ message: "Lock not found." });
     }
-    return res.status(200).json({ lockJsonObject: lock.LockJsonObject });
+    // Form a temporary lockJsonObject.
+    const result = {
+        lock_id: lockId,
+        lockJsonObject : {
+        originalcontenturl: lock.OriginalContentUrl,
+        lockedcontenturl: lock.LockedContentUrl,
+        contentid: lock.contentId,
+        locks: lock.locks
+      }
+    }
+    return res.status(200).json({ result });
   } catch (error) {
-    console.error("Error in /get-lockjsonobject:", error);
+    console.error("Error in getLockJsonObject:", error);
     return res.status(500).json({ message: error.message });
   }
 }

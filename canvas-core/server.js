@@ -32,7 +32,7 @@ const aesController = require('./controllers/aesController');
 const s3Controller = require('./controllers/s3Controller');
 const dbController = require('./controllers/dbController');
 
-// Routes.
+// Routes - create/modify/delete AES ( locks )
 app.post('/create-AES', aesController.createAES);
 app.post('/modify-AES', aesController.modifyAES);
 app.post('/delete-AES', aesController.deleteAES);
@@ -44,7 +44,7 @@ app.get('/get-lock-by-contentid/:contentId', dbController.getLockByContentId);
 app.get('/get-lockjsonobject/:lockId', dbController.getLockJsonObject);
 
 // Start the server.
-const PORT = 3000;
+const PORT = process.env.PORT;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });

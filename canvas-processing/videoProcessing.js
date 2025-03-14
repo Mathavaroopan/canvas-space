@@ -29,12 +29,13 @@ function getVideoResolution(inputPath) {
 /**
  * Given total video duration and an array of blackout lock objects,
  * builds an array of segment objects.
- * Each segment has a start, end, and flag indicating if it’s a blackout segment.
+ * Each segment has a start, end, and a flag indicating if it’s a blackout segment.
  * @param {number} totalDuration 
  * @param {Array} blackoutSegments 
  * @returns {Array}
  */
 function buildSegments(totalDuration, blackoutSegments) {
+  // Map each blackout segment to an object with start and end.
   const customSegments = blackoutSegments.map(seg => ({
     start: Number(seg.startTime),
     end: Number(seg.endTime)
@@ -120,7 +121,6 @@ function generatePlaylistContent(segments, type) {
 
 /**
  * Creates two HLS playlists (normal and blackout) by processing the video.
- * Breaks down each step into smaller functions.
  * @param {string} inputPath 
  * @param {Array} blackoutSegments 
  * @returns {object} { normalPlaylistPath, blackoutPlaylistPath }
