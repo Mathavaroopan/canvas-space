@@ -1,7 +1,13 @@
 const { execSync } = require('child_process');
 const fs = require('fs');
 const path = require('path');
+const { GetObjectCommand, ListObjectsV2Command } = require('@aws-sdk/client-s3');
+// Use the standard stream module and promisify its pipeline for broader compatibility.
+const { pipeline } = require('stream');
+const { promisify } = require('util');
+const streamPipeline = promisify(pipeline);
 const { TMP_DIR, outputDir } = require('./config');
+const { downloadFileFromS3 } = require('./s3Processing');
 
 /**
  * Gets the duration (in seconds) of a video using ffprobe.
@@ -29,13 +35,12 @@ function getVideoResolution(inputPath) {
 /**
  * Given total video duration and an array of blackout lock objects,
  * builds an array of segment objects.
- * Each segment has a start, end, and a flag indicating if it’s a blackout segment.
+ * Each segment has a start, end, and a flag indicating if it's a blackout segment.
  * @param {number} totalDuration 
  * @param {Array} blackoutSegments 
  * @returns {Array}
  */
 function buildSegments(totalDuration, blackoutSegments) {
-  // Map each blackout segment to an object with start and end.
   const customSegments = blackoutSegments.map(seg => ({
     start: Number(seg.startTime),
     end: Number(seg.endTime)
@@ -126,23 +131,17 @@ function generatePlaylistContent(segments, type) {
  * @returns {object} { normalPlaylistPath, blackoutPlaylistPath }
  */
 function createM3U8WithExactSegments(inputPath, blackoutSegments) {
-  // Get video properties.
   const totalDuration = getVideoDuration(inputPath);
   const resolution = getVideoResolution(inputPath);
-  // Build segments.
   const segments = buildSegments(totalDuration, blackoutSegments);
   
-  // Extract segments.
   segments.forEach((segment, index) => {
-    // Always extract the original segment.
     extractSegment(inputPath, segment, index, outputDir);
-    // For blackout segments, generate a blackout version.
     if (segment.isBlackout) {
       generateBlackoutSegment(segment, index, resolution, outputDir);
     }
   });
   
-  // Generate playlists.
   const normalPlaylistContent = generatePlaylistContent(segments, 'normal');
   const blackoutPlaylistContent = generatePlaylistContent(segments, 'blackout');
   
@@ -156,9 +155,13 @@ function createM3U8WithExactSegments(inputPath, blackoutSegments) {
 
 /**
  * Updates a playlist file's content by replacing local segment filenames with their corresponding S3 URLs.
+ * This is used when creating the playlists to be uploaded to S3, not for local playlists.
+ * @param {string} playlistPath Path to the local m3u8 file
+ * @param {object} fileUrlMapping Mapping of local filenames to S3 URLs
+ * @returns {string} Updated playlist content with S3 URLs for uploading to S3
  */
 function updatePlaylistContent(playlistPath, fileUrlMapping) {
-  let content = fs.readFileSync(playlistPath, 'utf8');
+  const content = fs.readFileSync(playlistPath, 'utf8');
   const lines = content.split('\n').map(line => {
     const trimmed = line.trim();
     if (trimmed.endsWith('.ts') && fileUrlMapping[trimmed]) {
@@ -167,6 +170,93 @@ function updatePlaylistContent(playlistPath, fileUrlMapping) {
     return line;
   });
   return lines.join('\n');
+}
+
+/**
+ * Downloads all objects in the given S3 folder (prefix) into a local folder.
+ * Returns the path to the local folder.
+ */
+async function downloadM3U8Folder(s3Client, bucketName, folderKey) {
+  const localFolder = path.join(TMP_DIR, `m3u8_download_${Date.now()}`);
+  if (!fs.existsSync(localFolder)) {
+    fs.mkdirSync(localFolder, { recursive: true });
+  }
+  const listParams = { Bucket: bucketName, Prefix: folderKey };
+  const listCommand = new ListObjectsV2Command(listParams);
+  const listData = await s3Client.send(listCommand);
+  if (!listData.Contents || listData.Contents.length === 0) {
+    throw new Error("No files found in the provided folder key.");
+  }
+  for (const obj of listData.Contents) {
+    if (obj.Key.endsWith('/')) continue;
+    const filename = path.basename(obj.Key);
+    const localFilePath = path.join(localFolder, filename);
+    const getObjectParams = { Bucket: bucketName, Key: obj.Key };
+    const getObjectCommand = new GetObjectCommand(getObjectParams);
+    const fileResponse = await s3Client.send(getObjectCommand);
+    await streamPipeline(fileResponse.Body, fs.createWriteStream(localFilePath));
+  }
+  return localFolder;
+}
+
+/**
+ * Reads and sanitizes a local m3u8 file so that TS segment lines contain only the filename.
+ */
+function sanitizeLocalM3U8(m3u8Path) {
+  const content = fs.readFileSync(m3u8Path, 'utf8');
+  const sanitized = content.split('\n').map(line => {
+    if (line.trim().endsWith('.ts')) {
+      const parts = line.trim().split('/');
+      return parts[parts.length - 1];
+    }
+    return line;
+  }).join('\n');
+  fs.writeFileSync(m3u8Path, sanitized);
+}
+
+/**
+ * Processes the S3 original key and downloads the file/folder to a local MP4 path.
+ * Handles different input types: m3u8 file, folder containing m3u8, or mp4 file.
+ */
+async function processSourceToLocalMp4(s3Client, bucketName, awsOriginalKey) {
+  let localMp4Path;
+  const ext = path.extname(awsOriginalKey).toLowerCase();
+
+  if (ext === '.m3u8') {
+    const folderKey = path.dirname(awsOriginalKey) + '/';
+    const localFolder = await downloadM3U8Folder(s3Client, bucketName, folderKey);
+    const m3u8Filename = path.basename(awsOriginalKey);
+    const localM3u8Path = path.join(localFolder, m3u8Filename);
+    sanitizeLocalM3U8(localM3u8Path);
+    localMp4Path = path.join(TMP_DIR, `${Date.now()}-converted.mp4`);
+    execSync(`ffmpeg -protocol_whitelist "file,http,https,tcp,tls" -i "${localM3u8Path}" -c copy "${localMp4Path}"`);
+    fs.rmSync(localFolder, { recursive: true, force: true });
+  } else if (!ext) {
+    let folderKey = awsOriginalKey;
+    if (!folderKey.endsWith('/')) folderKey += '/';
+    const localFolder = await downloadM3U8Folder(s3Client, bucketName, folderKey);
+    const files = fs.readdirSync(localFolder);
+    const m3u8File = files.find(file => file.endsWith('.m3u8'));
+    if (!m3u8File) {
+      throw new Error("No m3u8 file found in the provided folder.");
+    }
+    const localM3u8Path = path.join(localFolder, m3u8File);
+    sanitizeLocalM3U8(localM3u8Path);
+    localMp4Path = path.join(TMP_DIR, `${Date.now()}-converted.mp4`);
+    execSync(`ffmpeg -protocol_whitelist "file,http,https,tcp,tls" -i "${localM3u8Path}" -c copy "${localMp4Path}"`);
+    fs.rmSync(localFolder, { recursive: true, force: true });
+  } else {
+    localMp4Path = path.join(TMP_DIR, `${Date.now()}-original.mp4`);
+    await downloadFileFromS3(s3Client, bucketName, awsOriginalKey, localMp4Path);
+  }
+
+  try {
+    execSync(`ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of default=noprint_wrappers=1:nokey=1 "${localMp4Path}"`);
+  } catch (error) {
+    throw new Error(`Invalid or corrupted video file: ${error.message}`);
+  }
+
+  return localMp4Path;
 }
 
 module.exports = {
@@ -178,6 +268,9 @@ module.exports = {
   generatePlaylistContent,
   createM3U8WithExactSegments,
   updatePlaylistContent,
+  downloadM3U8Folder,
+  sanitizeLocalM3U8,
+  processSourceToLocalMp4,
   TMP_DIR,
   outputDir
 };

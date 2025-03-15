@@ -5,7 +5,7 @@ const { promisify } = require("util");
 const streamPipeline = promisify(pipeline);
 const path = require('path');
 const fs = require('fs');
-const { outputDir } = require('../../canvas-processing/videoProcessing');
+const { outputDir, TMP_DIR } = require('../../canvas-processing/videoProcessing');
 
 async function getVideoNames(req, res) {
   try {
@@ -86,9 +86,12 @@ async function downloadVideo(req, res) {
         await streamPipeline(fileResponse.Body, fs.createWriteStream(localFilePath));
         if (localFilePath.endsWith('.m3u8')) {
           let content = fs.readFileSync(localFilePath, 'utf-8');
+          // Strip any S3 URLs from the m3u8 file - only keep segment filenames
           content = content.split('\n').map(line => {
-            if (line.startsWith(s3UrlPrefix)) {
-              return line.replace(s3UrlPrefix, '');
+            if (line.trim().endsWith('.ts')) {
+              // Extract just the filename from any URL or path
+              const parts = line.trim().split('/');
+              return parts[parts.length - 1];
             }
             return line;
           }).join('\n');

@@ -1,75 +1,83 @@
-const fs = require('fs');
-const { pipeline } = require("stream");
-const { promisify } = require("util");
-const streamPipeline = promisify(pipeline);
-const { S3Client, GetObjectCommand } = require("@aws-sdk/client-s3");
+const { GetObjectCommand, PutObjectCommand } = require('@aws-sdk/client-s3');
 const { Upload } = require("@aws-sdk/lib-storage");
+const fs = require('fs');
 const path = require('path');
 const { outputDir } = require('./config');
 
 /**
- * Downloads a file from S3 and saves it locally.
+ * Uploads a file buffer to S3.
  * @param {S3Client} s3Client 
+ * @param {Buffer} fileBuffer 
  * @param {string} bucketName 
  * @param {string} key 
- * @param {string} destinationPath 
- * @returns {Promise<string>}
- */
-async function downloadFileFromS3(s3Client, bucketName, key, destinationPath) {
-  const command = new GetObjectCommand({ Bucket: bucketName, Key: key });
-  const data = await s3Client.send(command);
-  await streamPipeline(data.Body, fs.createWriteStream(destinationPath));
-  return destinationPath;
-}
-
-/**
- * Uploads a file buffer to S3.
+ * @param {string} contentType 
+ * @returns {string} URL of the uploaded file.
  */
 async function uploadToS3(s3Client, fileBuffer, bucketName, key, contentType) {
-  try {
-    const uploadParams = {
-      Bucket: bucketName,
-      Key: key,
-      Body: fileBuffer,
-      ContentType: contentType,
-    };
-    const parallelUploads3 = new Upload({
-      client: s3Client,
-      params: uploadParams,
-    });
-    const result = await parallelUploads3.done();
-    return result.Location || `https://${bucketName}.s3.amazonaws.com/${key}`;
-  } catch (error) {
-    console.error("S3 upload error:", error);
-    throw error;
-  }
+  const params = {
+    Bucket: bucketName,
+    Key: key,
+    Body: fileBuffer,
+    ContentType: contentType,
+  };
+  const command = new PutObjectCommand(params);
+  await s3Client.send(command);
+  return `https://${bucketName}.s3.amazonaws.com/${key}`;
 }
 
 /**
- * Uploads all files in the output directory to S3 under the given prefix.
- * Returns a mapping from local file names to S3 URLs.
+ * Uploads all files from the local HLS output directory to S3 under the specified folder.
+ * @param {S3Client} s3Client 
+ * @param {string} bucketName 
+ * @param {string} folder - S3 folder (should end with a slash).
+ * @returns {object} Mapping of local filenames to their S3 URLs.
  */
-async function uploadHlsFilesToS3(s3Client, bucketName, prefix) {
-  const files = fs.readdirSync(outputDir);
+async function uploadHlsFilesToS3(s3Client, bucketName, folder) {
+  const localOutputDir = outputDir;
+  const files = fs.readdirSync(localOutputDir);
   const fileUrlMapping = {};
+
   for (const file of files) {
-    const filePath = path.join(outputDir, file);
-    const fileBuffer = fs.readFileSync(filePath);
-    let contentType = 'application/octet-stream';
-    if (file.endsWith('.m3u8')) {
-      contentType = 'application/vnd.apple.mpegurl';
-    } else if (file.endsWith('.ts')) {
-      contentType = 'video/MP2T';
-    }
-    const key = `${prefix}${file}`;
-    const url = await uploadToS3(s3Client, fileBuffer, bucketName, key, contentType);
-    fileUrlMapping[file] = url;
+    const filePath = path.join(localOutputDir, file);
+    const fileStream = fs.createReadStream(filePath);
+    // Ensure folder ends with a slash.
+    const s3Folder = folder.endsWith('/') ? folder : folder + '/';
+    const key = s3Folder + file;
+    const upload = new Upload({
+      client: s3Client,
+      params: {
+        Bucket: bucketName,
+        Key: key,
+        Body: fileStream,
+      },
+    });
+    await upload.done();
+    fileUrlMapping[file] = `https://${bucketName}.s3.amazonaws.com/${key}`;
   }
   return fileUrlMapping;
 }
 
+/**
+ * Downloads a file from S3 to a specified local path.
+ * @param {S3Client} s3Client 
+ * @param {string} bucketName 
+ * @param {string} key 
+ * @param {string} localPath 
+ */
+async function downloadFileFromS3(s3Client, bucketName, key, localPath) {
+  const command = new GetObjectCommand({ Bucket: bucketName, Key: key });
+  const response = await s3Client.send(command);
+  const stream = response.Body;
+  const writeStream = fs.createWriteStream(localPath);
+  return new Promise((resolve, reject) => {
+    stream.pipe(writeStream)
+      .on('finish', resolve)
+      .on('error', reject);
+  });
+}
+
 module.exports = {
-  downloadFileFromS3,
   uploadToS3,
-  uploadHlsFilesToS3
+  uploadHlsFilesToS3,
+  downloadFileFromS3
 };
