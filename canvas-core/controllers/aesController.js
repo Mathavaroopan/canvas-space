@@ -363,13 +363,10 @@ async function modifyAES(req, res) {
 // POST /delete-AES
 async function deleteAES(req, res) {
   try {
-    const { storage_type, MetaData, lockId } = req.body;
+    const { storage_type, MetaData, lockId, folderPrefix } = req.body;
+    console.log(storage_type, MetaData, lockId);
     if (!MetaData || !lockId) {
       return res.status(400).json({ message: "Missing MetaData or lockId in request body." });
-    }
-    const { awsAccessKeyId, awsSecretAccessKey, awsRegion, awsBucketName, folderPrefix } = MetaData;
-    if (!awsAccessKeyId || !awsSecretAccessKey || !awsRegion || !awsBucketName || !folderPrefix) {
-      return res.status(400).json({ message: "Missing required AWS data." });
     }
     // Find the lock document by its _id.
     const lock = await Lock.findById(lockId);
@@ -380,26 +377,34 @@ async function deleteAES(req, res) {
     if (!contentId) {
       return res.status(400).json({ message: "Content ID not found in lock document." });
     }
-    const normalizedPrefix = folderPrefix.endsWith('/') ? folderPrefix : folderPrefix + '/';
-    const folderToDelete = normalizedPrefix + contentId + '/';
-    const s3Client = new S3Client({
-      region: awsRegion,
-      credentials: { accessKeyId: awsAccessKeyId, secretAccessKey: awsSecretAccessKey }
-    });
-    const listParams = { Bucket: awsBucketName, Prefix: folderToDelete };
-    const listCommand = new ListObjectsV2Command(listParams);
-    const listData = await s3Client.send(listCommand);
-    if (!listData.Contents || listData.Contents.length === 0) {
-      return res.status(404).json({ message: "No objects found in the specified folder." });
+
+    const { awsAccessKeyId, awsSecretAccessKey, awsRegion, awsBucketName } = MetaData;
+    if (!awsAccessKeyId || !awsSecretAccessKey || !awsRegion || !awsBucketName || !folderPrefix) {
+      return res.status(400).json({ message: "Missing required AWS data." });
     }
-    const objectsToDelete = listData.Contents.map(obj => ({ Key: obj.Key }));
-    const deleteParams = {
-      Bucket: awsBucketName,
-      Delete: { Objects: objectsToDelete, Quiet: false }
-    };
-    const deleteCommand = new DeleteObjectsCommand(deleteParams);
-    const deleteResult = await s3Client.send(deleteCommand);
-    return res.status(200).json({ message: "Folder deleted successfully", deleteResult });
+    
+    if(storage_type === "AWS"){
+      const normalizedPrefix = folderPrefix.endsWith('/') ? folderPrefix : folderPrefix + '/';
+      const folderToDelete = normalizedPrefix + contentId + '/';
+      const s3Client = new S3Client({
+        region: awsRegion,
+        credentials: { accessKeyId: awsAccessKeyId, secretAccessKey: awsSecretAccessKey }
+      });
+      const listParams = { Bucket: awsBucketName, Prefix: folderToDelete };
+      const listCommand = new ListObjectsV2Command(listParams);
+      const listData = await s3Client.send(listCommand);
+      if (!listData.Contents || listData.Contents.length === 0) {
+        return res.status(404).json({ message: "No objects found in the specified folder." });
+      }
+      const objectsToDelete = listData.Contents.map(obj => ({ Key: obj.Key }));
+      const deleteParams = {
+        Bucket: awsBucketName,
+        Delete: { Objects: objectsToDelete, Quiet: false }
+      };
+      const deleteCommand = new DeleteObjectsCommand(deleteParams);
+      const deleteResult = await s3Client.send(deleteCommand);
+      return res.status(200).json({ message: "Folder deleted successfully", deleteResult });
+    }else res.send("Invalid storage type");
   } catch (error) {
     console.error("Error in /delete-AES:", error);
     return res.status(500).json({ message: error.message });

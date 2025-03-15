@@ -1,14 +1,14 @@
 // canvas-core/controllers/dbController.js
 const Lock = require('../models/Lock');
 
-async function getLockByContentId(req, res) {
+async function getLockIdByContentId(req, res) {
   try {
     const { contentId } = req.params;
     const lock = await Lock.findOne({ contentId });
     if (!lock) {
       return res.status(404).json({ message: "Lock not found." });
     }
-    return res.status(200).json(lock);
+    return res.status(200).json( { _id: lock._id });
   } catch (error) {
     console.error("Error in getLockByContentId:", error);
     return res.status(500).json({ message: error.message });
@@ -40,6 +40,6 @@ async function getLockJsonObject(req, res) {
 }
 
 module.exports = {
-  getLockByContentId,
+  getLockIdByContentId,
   getLockJsonObject
 };

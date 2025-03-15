@@ -40,7 +40,7 @@ app.post('/delete-AES', aesController.deleteAES);
 app.post('/get-video-names', s3Controller.getVideoNames);
 app.post('/download-video', s3Controller.downloadVideo);
 
-app.get('/get-lock-by-contentid/:contentId', dbController.getLockByContentId);
+app.get('/get-lockId-by-contentId/:contentId', dbController.getLockIdByContentId);
 app.get('/get-lockjsonobject/:lockId', dbController.getLockJsonObject);
 
 // Start the server.

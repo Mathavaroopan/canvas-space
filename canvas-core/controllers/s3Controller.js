@@ -44,8 +44,7 @@ async function getVideoNames(req, res) {
 async function downloadVideo(req, res) {
   try {
     console.log(req.body);
-    const { json, folderPrefix } = req.body;
-    const { storage_type, MetaData } = json;
+    const { storage_type, MetaData, folderPrefix } = req.body;
     // Check storage type from the request body
     if (storage_type === "AWS") {
       const { awsAccessKeyId, awsSecretAccessKey, awsRegion, awsBucketName } = MetaData;
