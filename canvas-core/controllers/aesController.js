@@ -136,31 +136,6 @@ async function createAES(req, res) {
     if (!MetaData) {
       return res.status(400).json({ message: "Missing MetaData in request body." });
     }
-    const { 
-      awsAccessKeyId, 
-      awsSecretAccessKey, 
-      awsRegion, 
-      awsBucketName, 
-      awsOriginalKey, 
-      awsDestinationFolder 
-    } = MetaData;
-    if (!awsAccessKeyId || !awsSecretAccessKey) {
-      return res.status(400).json({ message: "Missing AWS credentials." });
-    }
-    if (!awsBucketName || !awsOriginalKey || !awsDestinationFolder) {
-      return res.status(400).json({ message: "Missing awsBucketName, awsOriginalKey and/or awsDestinationFolder." });
-    }
-    if (!contentId) {
-      return res.status(400).json({ message: "Missing contentId." });
-    }
-
-    const s3Client = new S3Client({
-      region: awsRegion,
-      credentials: { accessKeyId: awsAccessKeyId, secretAccessKey: awsSecretAccessKey }
-    });
-
-    // Process source and get local MP4 path.
-    const localMp4Path = await processSourceToLocalMp4(s3Client, awsBucketName, awsOriginalKey);
 
     // Precompute lock lists.
     const allLocks = locks || [];
@@ -186,60 +161,93 @@ async function createAES(req, res) {
       return base;
     });
 
-    // Process the MP4 into HLS playlists using the blackout locks.
-    const { normalPlaylistPath, blackoutPlaylistPath } = createM3U8WithExactSegments(localMp4Path, blackoutLocksForHLS);
+    if (storage_type === "AWS") {
+      // Extract AWS credentials from MetaData.
+      const {
+        awsAccessKeyId,
+        awsSecretAccessKey,
+        awsRegion,
+        awsBucketName,
+        awsOriginalKey,
+        awsDestinationFolder
+      } = MetaData;
 
-    // Create a subfolder for the content in S3.
-    const baseFolder = awsDestinationFolder.endsWith('/') ? awsDestinationFolder : awsDestinationFolder + '/';
-    const uniqueSubfolder = baseFolder + contentId + '/';
+      if (!awsAccessKeyId || !awsSecretAccessKey) {
+        return res.status(400).json({ message: "Missing AWS credentials." });
+      }
+      if (!awsBucketName || !awsOriginalKey || !awsDestinationFolder) {
+        return res.status(400).json({ message: "Missing awsBucketName, awsOriginalKey and/or awsDestinationFolder." });
+      }
+      if (!contentId) {
+        return res.status(400).json({ message: "Missing contentId." });
+      }
 
-    // Upload HLS files to S3.
-    const fileUrlMapping = await uploadHlsFilesToS3(s3Client, awsBucketName, uniqueSubfolder);
+      // Initialize S3 client.
+      const s3Client = new S3Client({
+        region: awsRegion,
+        credentials: { accessKeyId: awsAccessKeyId, secretAccessKey: awsSecretAccessKey }
+      });
 
-    // Update playlists with S3 URLs.
-    const updatedNormalPlaylist = updatePlaylistContent(normalPlaylistPath, fileUrlMapping);
-    const updatedBlackoutPlaylist = updatePlaylistContent(blackoutPlaylistPath, fileUrlMapping);
+      // Process source and get local MP4 path.
+      const localMp4Path = await processSourceToLocalMp4(s3Client, awsBucketName, awsOriginalKey);
 
-    const finalNormalKey = uniqueSubfolder + 'output.m3u8';
-    const finalBlackoutKey = uniqueSubfolder + 'blackout.m3u8';
-    const normalUrl = await uploadToS3(
-      s3Client,
-      Buffer.from(updatedNormalPlaylist, 'utf8'),
-      awsBucketName,
-      finalNormalKey,
-      'application/vnd.apple.mpegurl'
-    );
-    const blackoutUrl = await uploadToS3(
-      s3Client,
-      Buffer.from(updatedBlackoutPlaylist, 'utf8'),
-      awsBucketName,
-      finalBlackoutKey,
-      'application/vnd.apple.mpegurl'
-    );
+      // Process the MP4 into HLS playlists using the blackout locks.
+      const { normalPlaylistPath, blackoutPlaylistPath } = createM3U8WithExactSegments(localMp4Path, blackoutLocksForHLS);
 
-    // Clean up local MP4 and HLS output files.
-    fs.unlinkSync(localMp4Path);
-    const hlsFiles = fs.readdirSync(outputDir);
-    for (const file of hlsFiles) {
-      fs.unlinkSync(path.join(outputDir, file));
+      // Create a subfolder for the content in S3.
+      const baseFolder = awsDestinationFolder.endsWith('/') ? awsDestinationFolder : awsDestinationFolder + '/';
+      const uniqueSubfolder = baseFolder + contentId + '/';
+
+      // Upload HLS files to S3.
+      const fileUrlMapping = await uploadHlsFilesToS3(s3Client, awsBucketName, uniqueSubfolder);
+
+      // Update playlists with S3 URLs.
+      const updatedNormalPlaylist = updatePlaylistContent(normalPlaylistPath, fileUrlMapping);
+      const updatedBlackoutPlaylist = updatePlaylistContent(blackoutPlaylistPath, fileUrlMapping);
+
+      const finalNormalKey = uniqueSubfolder + 'output.m3u8';
+      const finalBlackoutKey = uniqueSubfolder + 'blackout.m3u8';
+      const normalUrl = await uploadToS3(
+        s3Client,
+        Buffer.from(updatedNormalPlaylist, 'utf8'),
+        awsBucketName,
+        finalNormalKey,
+        'application/vnd.apple.mpegurl'
+      );
+      const blackoutUrl = await uploadToS3(
+        s3Client,
+        Buffer.from(updatedBlackoutPlaylist, 'utf8'),
+        awsBucketName,
+        finalBlackoutKey,
+        'application/vnd.apple.mpegurl'
+      );
+
+      // Clean up local MP4 and HLS output files.
+      fs.unlinkSync(localMp4Path);
+      const hlsFiles = fs.readdirSync(outputDir);
+      for (const file of hlsFiles) {
+        fs.unlinkSync(path.join(outputDir, file));
+      }
+
+      // Create and save the lock record using the updated schema.
+      const newLock = new Lock({
+        PlatformID: platformId,
+        UserID: userId,
+        OriginalContentUrl: `https://${awsBucketName}.s3.${awsRegion}.amazonaws.com/${awsOriginalKey}`,
+        LockedContentUrl: blackoutUrl,
+        contentId,
+        storage_type,
+        locks: dbLocks
+      });
+      await newLock.save();
+
+      return res.status(201).json({
+        message: 'Lock created successfully',
+        lock_id: newLock._id
+      });
+    } else {
+      return res.send("Invalid storage type");
     }
-
-    // Create and save the lock record using the updated schema.
-    const newLock = new Lock({
-      PlatformID: platformId,
-      UserID: userId,
-      OriginalContentUrl: `https://${awsBucketName}.s3.${awsRegion}.amazonaws.com/${awsOriginalKey}`,
-      LockedContentUrl: blackoutUrl,
-      contentId,
-      storage_type,
-      locks: dbLocks
-    });
-    await newLock.save();
-
-    return res.status(201).json({
-      message: 'Lock created successfully',
-      lock_id: newLock._id,
-    });
   } catch (error) {
     console.error("Error in /create-AES:", error);
     return res.status(500).json({ message: 'Server error', error: error.message });
@@ -253,31 +261,6 @@ async function modifyAES(req, res) {
     if (!MetaData || !lockId || !newLocks || !folder) {
       return res.status(400).json({ message: "Missing required fields." });
     }
-    const { awsAccessKeyId, awsSecretAccessKey, awsRegion, awsBucketName } = MetaData;
-    if (!awsAccessKeyId || !awsSecretAccessKey || !awsRegion || !awsBucketName) {
-      return res.status(400).json({ message: "Missing required AWS data." });
-    }
-
-    // Find the lock document by its _id.
-    const lock = await Lock.findById(lockId);
-    if (!lock) {
-      return res.status(404).json({ message: "Lock not found." });
-    }
-    // Extract original video key from OriginalContentUrl.
-    const originalUrl = lock.OriginalContentUrl;
-    const urlParts = originalUrl.split('.amazonaws.com/');
-    if (urlParts.length < 2) {
-      return res.status(500).json({ message: "Invalid original content URL." });
-    }
-    const awsOriginalKey = urlParts[1];
-    const s3Client = new S3Client({
-      region: awsRegion,
-      credentials: { accessKeyId: awsAccessKeyId, secretAccessKey: awsSecretAccessKey }
-    });
-
-    // Process source and get local MP4 path.
-    const localMp4Path = await processSourceToLocalMp4(s3Client, awsBucketName, awsOriginalKey);
-    console.log(`Local MP4 path: ${localMp4Path}, size: ${fs.statSync(localMp4Path).size} bytes`);
 
     // Precompute new lock lists.
     const allNewLocks = newLocks || [];
@@ -301,61 +284,91 @@ async function modifyAES(req, res) {
       return base;
     });
 
-    // Delete existing folder content in S3.
-    const listParams = { Bucket: awsBucketName, Prefix: folder };
-    const listCommand = new ListObjectsV2Command(listParams);
-    const listData = await s3Client.send(listCommand);
-    if (listData.Contents && listData.Contents.length > 0) {
-      const objectsToDelete = listData.Contents.map(obj => ({ Key: obj.Key }));
-      const deleteParams = { Bucket: awsBucketName, Delete: { Objects: objectsToDelete, Quiet: false } };
-      const deleteCommand = new DeleteObjectsCommand(deleteParams);
-      await s3Client.send(deleteCommand);
+    if (storage_type === "AWS") {
+      const { awsAccessKeyId, awsSecretAccessKey, awsRegion, awsBucketName } = MetaData;
+      if (!awsAccessKeyId || !awsSecretAccessKey || !awsRegion || !awsBucketName) {
+        return res.status(400).json({ message: "Missing required AWS data." });
+      }
+
+      // Find the lock document by its _id.
+      const lock = await Lock.findById(lockId);
+      if (!lock) {
+        return res.status(404).json({ message: "Lock not found." });
+      }
+      // Extract original video key from OriginalContentUrl.
+      const originalUrl = lock.OriginalContentUrl;
+      const urlParts = originalUrl.split('.amazonaws.com/');
+      if (urlParts.length < 2) {
+        return res.status(500).json({ message: "Invalid original content URL." });
+      }
+      const awsOriginalKey = urlParts[1];
+      const s3Client = new S3Client({
+        region: awsRegion,
+        credentials: { accessKeyId: awsAccessKeyId, secretAccessKey: awsSecretAccessKey }
+      });
+
+      // Process source and get local MP4 path.
+      const localMp4Path = await processSourceToLocalMp4(s3Client, awsBucketName, awsOriginalKey);
+      console.log(`Local MP4 path: ${localMp4Path}, size: ${fs.statSync(localMp4Path).size} bytes`);
+
+      // Delete existing folder content in S3.
+      const listParams = { Bucket: awsBucketName, Prefix: folder };
+      const listCommand = new ListObjectsV2Command(listParams);
+      const listData = await s3Client.send(listCommand);
+      if (listData.Contents && listData.Contents.length > 0) {
+        const objectsToDelete = listData.Contents.map(obj => ({ Key: obj.Key }));
+        const deleteParams = { Bucket: awsBucketName, Delete: { Objects: objectsToDelete, Quiet: false } };
+        const deleteCommand = new DeleteObjectsCommand(deleteParams);
+        await s3Client.send(deleteCommand);
+      }
+      
+      // Process HLS files.
+      const { normalPlaylistPath, blackoutPlaylistPath } = createM3U8WithExactSegments(localMp4Path, blackoutLocksForHLS);
+      const fileUrlMapping = await uploadHlsFilesToS3(s3Client, awsBucketName, folder);
+      const updatedNormalPlaylist = updatePlaylistContent(normalPlaylistPath, fileUrlMapping);
+      const updatedBlackoutPlaylist = updatePlaylistContent(blackoutPlaylistPath, fileUrlMapping);
+      
+      const finalNormalKey = folder + 'output.m3u8';
+      const finalBlackoutKey = folder + 'blackout.m3u8';
+      const normalUrl = await uploadToS3(
+        s3Client,
+        Buffer.from(updatedNormalPlaylist, 'utf8'),
+        awsBucketName,
+        finalNormalKey,
+        'application/vnd.apple.mpegurl'
+      );
+      const blackoutUrl = await uploadToS3(
+        s3Client,
+        Buffer.from(updatedBlackoutPlaylist, 'utf8'),
+        awsBucketName,
+        finalBlackoutKey,
+        'application/vnd.apple.mpegurl'
+      );
+      
+      fs.unlinkSync(localMp4Path);
+      const hlsFiles = fs.readdirSync(outputDir);
+      for (const file of hlsFiles) {
+        fs.unlinkSync(path.join(outputDir, file));
+      }
+      
+      // Update the lock record with new locks (all types).
+      lock.locks = dbNewLocks;
+      lock.LockedContentUrl = blackoutUrl;
+      await lock.save();
+      
+      return res.status(200).json({
+        message: "Lock modified successfully",
+        lock_id: lock._id,
+      });
+    } else {
+      return res.send("Invalid storage type");
     }
-    
-    // Process HLS files.
-    const { normalPlaylistPath, blackoutPlaylistPath } = createM3U8WithExactSegments(localMp4Path, blackoutLocksForHLS);
-    const fileUrlMapping = await uploadHlsFilesToS3(s3Client, awsBucketName, folder);
-    const updatedNormalPlaylist = updatePlaylistContent(normalPlaylistPath, fileUrlMapping);
-    const updatedBlackoutPlaylist = updatePlaylistContent(blackoutPlaylistPath, fileUrlMapping);
-    
-    const finalNormalKey = folder + 'output.m3u8';
-    const finalBlackoutKey = folder + 'blackout.m3u8';
-    const normalUrl = await uploadToS3(
-      s3Client,
-      Buffer.from(updatedNormalPlaylist, 'utf8'),
-      awsBucketName,
-      finalNormalKey,
-      'application/vnd.apple.mpegurl'
-    );
-    const blackoutUrl = await uploadToS3(
-      s3Client,
-      Buffer.from(updatedBlackoutPlaylist, 'utf8'),
-      awsBucketName,
-      finalBlackoutKey,
-      'application/vnd.apple.mpegurl'
-    );
-    
-    fs.unlinkSync(localMp4Path);
-    const hlsFiles = fs.readdirSync(outputDir);
-    for (const file of hlsFiles) {
-      fs.unlinkSync(path.join(outputDir, file));
-    }
-    
-    // Update the lock record with new locks (all types).
-    lock.locks = dbNewLocks;
-    lock.LockedContentUrl = blackoutUrl;
-    await lock.save();
-    
-    return res.status(200).json({
-      message: "Lock modified successfully",
-      lock_id: lock._id,
-    });
   } catch (error) {
     console.error("Error in /modify-AES:", error);
     return res.status(500).json({ message: error.message });
   }
 }
-  
+
 // POST /delete-AES
 async function deleteAES(req, res) {
   try {
@@ -374,12 +387,12 @@ async function deleteAES(req, res) {
       return res.status(400).json({ message: "Content ID not found in lock document." });
     }
 
-    const { awsAccessKeyId, awsSecretAccessKey, awsRegion, awsBucketName } = MetaData;
-    if (!awsAccessKeyId || !awsSecretAccessKey || !awsRegion || !awsBucketName || !folderPrefix) {
-      return res.status(400).json({ message: "Missing required AWS data." });
-    }
-    
-    if(storage_type === "AWS"){
+    if (storage_type === "AWS") {
+      const { awsAccessKeyId, awsSecretAccessKey, awsRegion, awsBucketName } = MetaData;
+      if (!awsAccessKeyId || !awsSecretAccessKey || !awsRegion || !awsBucketName || !folderPrefix) {
+        return res.status(400).json({ message: "Missing required AWS data." });
+      }
+      
       const normalizedPrefix = folderPrefix.endsWith('/') ? folderPrefix : folderPrefix + '/';
       const folderToDelete = normalizedPrefix + contentId + '/';
       const s3Client = new S3Client({
@@ -400,12 +413,15 @@ async function deleteAES(req, res) {
       const deleteCommand = new DeleteObjectsCommand(deleteParams);
       const deleteResult = await s3Client.send(deleteCommand);
       return res.status(200).json({ message: "Folder deleted successfully", lockId });
-    }else res.send("Invalid storage type");
+    } else {
+      return res.send("Invalid storage type");
+    }
   } catch (error) {
     console.error("Error in /delete-AES:", error);
     return res.status(500).json({ message: error.message });
   }
 }
+
 
 module.exports = {
   createAES,
