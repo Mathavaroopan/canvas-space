@@ -239,8 +239,6 @@ async function createAES(req, res) {
     return res.status(201).json({
       message: 'Lock created successfully',
       lock_id: newLock._id,
-      normalUrl,
-      blackoutUrl
     });
   } catch (error) {
     console.error("Error in /create-AES:", error);
@@ -350,9 +348,7 @@ async function modifyAES(req, res) {
     
     return res.status(200).json({
       message: "Lock modified successfully",
-      lock,
-      normalUrl,
-      blackoutUrl
+      lock_id: lock._id,
     });
   } catch (error) {
     console.error("Error in /modify-AES:", error);
@@ -403,7 +399,7 @@ async function deleteAES(req, res) {
       };
       const deleteCommand = new DeleteObjectsCommand(deleteParams);
       const deleteResult = await s3Client.send(deleteCommand);
-      return res.status(200).json({ message: "Folder deleted successfully", deleteResult });
+      return res.status(200).json({ message: "Folder deleted successfully", lockId });
     }else res.send("Invalid storage type");
   } catch (error) {
     console.error("Error in /delete-AES:", error);
