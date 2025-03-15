@@ -7,19 +7,11 @@ const { Upload } = require("@aws-sdk/lib-storage");
 const path = require('path');
 const { outputDir } = require('./config');
 
-/**
- * Downloads a file from S3 and saves it locally.
- * @param {S3Client} s3Client 
- * @param {string} bucketName 
- * @param {string} key 
- * @param {string} destinationPath 
- * @returns {Promise<string>}
- */
-async function downloadFileFromS3(s3Client, bucketName, key, destinationPath) {
-  const command = new GetObjectCommand({ Bucket: bucketName, Key: key });
-  const data = await s3Client.send(command);
-  await streamPipeline(data.Body, fs.createWriteStream(destinationPath));
-  return destinationPath;
+async function downloadFileFromS3(s3Client, bucketName, key, localPath) {
+  const getParams = { Bucket: bucketName, Key: key };
+  const getCommand = new GetObjectCommand(getParams);
+  const data = await s3Client.send(getCommand);
+  await streamPipeline(data.Body, fs.createWriteStream(localPath));
 }
 
 /**

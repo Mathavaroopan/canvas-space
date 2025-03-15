@@ -8,7 +8,8 @@ const LockItemSchema = new Schema({
     enum: ['replacement-video-lock', 'blackout-lock', 'form-lock'],
     required: true
   },
-  starttime: { type: Number, required: true }
+  starttime: { type: Number, required: true },
+  endtime: { type: Number, required: true }
 }, {
   discriminatorKey: 'lock_type', // Field used for discriminating subdocument types
   _id: false
@@ -35,22 +36,13 @@ const LockSchema = new Schema({
 // For "replacement-video-lock": add endtime and replacement_video_url.
 LockSchema.path('locks').discriminator('replacement-video-lock',
   new Schema({
-    endtime: { type: Number, required: true },
     replacement_video_url: { type: String, required: true }
-  }, { _id: false })
-);
-
-// For "blackout-lock": add endtime.
-LockSchema.path('locks').discriminator('blackout-lock',
-  new Schema({
-    endtime: { type: Number, required: true }
   }, { _id: false })
 );
 
 // For "form-lock": add endtime and customJson.
 LockSchema.path('locks').discriminator('form-lock',
   new Schema({
-    endtime: { type: Number, required: true },
     customJson: { type: Schema.Types.Mixed, required: true }
   }, { _id: false })
 );

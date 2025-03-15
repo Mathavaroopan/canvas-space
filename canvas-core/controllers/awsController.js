@@ -7,60 +7,39 @@ const streamPipeline = promisify(pipeline);
 const path = require('path');
 const fs = require('fs');
 const { TMP_DIR } = require('../../canvas-processing/videoProcessing');
-
-/**
- * Returns an AWS S3 client.
- * MetaData must include: awsAccessKeyId, awsSecretAccessKey, awsRegion.
- */
-function getAWSClient(metaData) {
-  return new S3Client({
-    region: metaData.awsRegion,
-    credentials: { 
-      accessKeyId: metaData.awsAccessKeyId, 
-      secretAccessKey: metaData.awsSecretAccessKey 
-    }
-  });
-}
-
-/**
- * Downloads a file from S3 to a local path.
- */
-async function downloadFileFromS3(s3Client, bucketName, key, localPath) {
-  const getParams = { Bucket: bucketName, Key: key };
-  const getCommand = new GetObjectCommand(getParams);
-  const data = await s3Client.send(getCommand);
-  await streamPipeline(data.Body, fs.createWriteStream(localPath));
-}
-
+const { downloadFileFromS3 } = require('../../canvas-processing/s3Processing');
 /**
  * Downloads all objects in the given S3 folder (prefix) into a local folder.
- * Returns the local folder path.
+ * Returns the path to the local folder.
  */
 async function downloadM3U8Folder(s3Client, bucketName, folderKey) {
+  // Create a unique local folder.
   const localFolder = path.join(TMP_DIR, `m3u8_download_${Date.now()}`);
   if (!fs.existsSync(localFolder)) {
     fs.mkdirSync(localFolder, { recursive: true });
   }
+  // List all objects with the given folderKey prefix.
   const listParams = { Bucket: bucketName, Prefix: folderKey };
   const listCommand = new ListObjectsV2Command(listParams);
   const listData = await s3Client.send(listCommand);
   if (!listData.Contents || listData.Contents.length === 0) {
     throw new Error("No files found in the provided folder key.");
   }
+  // Download each object into the local folder.
   for (const obj of listData.Contents) {
-    if (obj.Key.endsWith('/')) continue;
+    if (obj.Key.endsWith('/')) continue; // skip folder markers
     const filename = path.basename(obj.Key);
     const localFilePath = path.join(localFolder, filename);
-    const getParams = { Bucket: bucketName, Key: obj.Key };
-    const getCommand = new GetObjectCommand(getParams);
-    const data = await s3Client.send(getCommand);
-    await streamPipeline(data.Body, fs.createWriteStream(localFilePath));
+    const getObjectParams = { Bucket: bucketName, Key: obj.Key };
+    const getObjectCommand = new GetObjectCommand(getObjectParams);
+    const fileResponse = await s3Client.send(getObjectCommand);
+    await streamPipeline(fileResponse.Body, fs.createWriteStream(localFilePath));
   }
   return localFolder;
 }
 
 /**
- * Reads and sanitizes a local m3u8 file so that TS segment lines contain only the filename.
+ * Sanitizes a local m3u8 file so that all TS segment lines contain only the filename.
  */
 function sanitizeLocalM3U8(m3u8Path) {
   let content = fs.readFileSync(m3u8Path, 'utf8');
@@ -76,12 +55,14 @@ function sanitizeLocalM3U8(m3u8Path) {
 
 /**
  * Processes the S3 original key and downloads the file/folder to a local MP4 path.
- * Handles .m3u8 file, folder containing m3u8, or an MP4 file.
+ * Handles different input types: m3u8 file, folder containing m3u8, or mp4 file.
  */
 async function processSourceToLocalMp4(s3Client, bucketName, awsOriginalKey) {
   let localMp4Path;
   const ext = path.extname(awsOriginalKey).toLowerCase();
+
   if (ext === '.m3u8') {
+    // awsOriginalKey is a file. Get its folder.
     const folderKey = path.dirname(awsOriginalKey) + '/';
     const localFolder = await downloadM3U8Folder(s3Client, bucketName, folderKey);
     const m3u8Filename = path.basename(awsOriginalKey);
@@ -91,6 +72,7 @@ async function processSourceToLocalMp4(s3Client, bucketName, awsOriginalKey) {
     execSync(`ffmpeg -protocol_whitelist "file,http,https,tcp,tls" -i "${localM3u8Path}" -c copy "${localMp4Path}"`);
     fs.rmSync(localFolder, { recursive: true, force: true });
   } else if (!ext) {
+    // awsOriginalKey is assumed to be a folder.
     let folderKey = awsOriginalKey;
     if (!folderKey.endsWith('/')) folderKey += '/';
     const localFolder = await downloadM3U8Folder(s3Client, bucketName, folderKey);
@@ -105,38 +87,23 @@ async function processSourceToLocalMp4(s3Client, bucketName, awsOriginalKey) {
     execSync(`ffmpeg -protocol_whitelist "file,http,https,tcp,tls" -i "${localM3u8Path}" -c copy "${localMp4Path}"`);
     fs.rmSync(localFolder, { recursive: true, force: true });
   } else {
+    // awsOriginalKey is assumed to be an MP4 file.
     localMp4Path = path.join(TMP_DIR, `${Date.now()}-original.mp4`);
     await downloadFileFromS3(s3Client, bucketName, awsOriginalKey, localMp4Path);
   }
+
+  // Validate the MP4 file.
   try {
     execSync(`ffprobe -v error -select_streams v:0 -show_entries stream=codec_name -of default=noprint_wrappers=1:nokey=1 "${localMp4Path}"`);
   } catch (error) {
     throw new Error(`Invalid or corrupted video file: ${error.message}`);
   }
+
   return localMp4Path;
 }
 
-/**
- * Deletes all objects within a specified folder from S3.
- */
-async function deleteFolder(s3Client, bucketName, folderToDelete) {
-  const listParams = { Bucket: bucketName, Prefix: folderToDelete };
-  const listCommand = new ListObjectsV2Command(listParams);
-  const listData = await s3Client.send(listCommand);
-  if (!listData.Contents || listData.Contents.length === 0) {
-    throw new Error("No objects found in the specified folder.");
-  }
-  const objectsToDelete = listData.Contents.map(obj => ({ Key: obj.Key }));
-  const deleteParams = { Bucket: bucketName, Delete: { Objects: objectsToDelete, Quiet: false } };
-  const deleteCommand = new DeleteObjectsCommand(deleteParams);
-  await s3Client.send(deleteCommand);
-}
-
 module.exports = {
-  getAWSClient,
-  downloadFileFromS3,
   downloadM3U8Folder,
   sanitizeLocalM3U8,
   processSourceToLocalMp4,
-  deleteFolder
 };
