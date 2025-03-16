@@ -43,9 +43,7 @@ async function getVideoNames(req, res) {
 
 async function downloadVideo(req, res) {
   try {
-    console.log(req.body);
     const { storage_type, MetaData, folderPrefix } = req.body;
-    // Check storage type from the request body
     if (storage_type === "AWS") {
       const { awsAccessKeyId, awsSecretAccessKey, awsRegion, awsBucketName } = MetaData;
       if (!awsAccessKeyId || !awsSecretAccessKey || !awsRegion || !awsBucketName) {
@@ -63,7 +61,6 @@ async function downloadVideo(req, res) {
           fs.unlinkSync(path.join(outputDir, file));
         }
       }
-      console.log(MetaData, folderPrefix);
       const listParams = { Bucket: awsBucketName, Prefix: folderPrefix };
       const listCommand = new ListObjectsV2Command(listParams);
       const data = await s3Client.send(listCommand);

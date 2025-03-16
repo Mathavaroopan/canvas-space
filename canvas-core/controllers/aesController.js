@@ -17,7 +17,8 @@ const Lock = require('../models/Lock');
 async function createAES(req, res) {
   try {
     const { storage_type, MetaData, platformId, userId, contentId, locks } = req.body || {};
-
+    console.log("CreateAes");
+    console.log(req.body);
     if (!MetaData) {
       return res.status(400).json({ message: "Missing MetaData in request body." });
     }
@@ -258,6 +259,7 @@ async function modifyAES(req, res) {
 async function deleteAES(req, res) {
   try {
     const { storage_type, MetaData, lockId, folderPrefix } = req.body;
+    console.log("Delete request:", { storage_type, MetaData, lockId, folderPrefix });
     if (!MetaData || !lockId) {
       return res.status(400).json({ message: "Missing MetaData or lockId in request body." });
     }
