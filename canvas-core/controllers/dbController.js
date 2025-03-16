@@ -1,4 +1,3 @@
-// canvas-core/controllers/dbController.js
 const Lock = require('../models/Lock');
 
 async function getLockIdByContentId(req, res) {
@@ -8,9 +7,9 @@ async function getLockIdByContentId(req, res) {
     if (!lock) {
       return res.status(404).json({ message: "Lock not found." });
     }
-    return res.status(200).json( { _id: lock._id });
+    return res.status(200).json({ lock_id: lock._id });
   } catch (error) {
-    console.error("Error in getLockByContentId:", error);
+    console.error("Error in getLockIdByContentId:", error);
     return res.status(500).json({ message: error.message });
   }
 }
@@ -22,13 +21,14 @@ async function getLockJsonObject(req, res) {
     if (!lock) {
       return res.status(404).json({ message: "Lock not found." });
     }
-    // Form a temporary lockJsonObject.
     const result = {
-        lock_id: lockId,
-        lockJsonObject : {
-        originalcontenturl: lock.OriginalContentUrl,
-        lockedcontenturl: lock.LockedContentUrl,
-        contentid: lock.contentId,
+      lock_id: lockId,
+      lockJsonObject: {
+        originalContentUrl: lock.OriginalContentUrl,
+        lockedContentUrl: lock.LockedContentUrl,
+        contentId: lock.contentId,
+        platformName: lock.PlatformName,
+        userName: lock.UserName,
         locks: lock.locks
       }
     }
@@ -39,7 +39,26 @@ async function getLockJsonObject(req, res) {
   }
 }
 
+// New API: Get lockId by inputVideoUrl
+async function getLockIdByInputVideoUrl(req, res) {
+  try {
+    const { inputVideoUrl } = req.body;
+    if (!inputVideoUrl) {
+      return res.status(400).json({ message: "Missing inputVideoUrl in request body." });
+    }
+    const lock = await Lock.findOne({ OriginalContentUrl: inputVideoUrl });
+    if (!lock) {
+      return res.status(404).json({ message: "Lock not found." });
+    }
+    return res.status(200).json({ lock_id: lock._id });
+  } catch (error) {
+    console.error("Error in getLockIdByInputVideoUrl:", error);
+    return res.status(500).json({ message: error.message });
+  }
+}
+
 module.exports = {
   getLockIdByContentId,
-  getLockJsonObject
+  getLockJsonObject,
+  getLockIdByInputVideoUrl
 };

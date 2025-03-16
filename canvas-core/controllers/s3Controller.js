@@ -1,4 +1,3 @@
-// canvas-core/controllers/s3Controller.js
 const { S3Client, ListObjectsV2Command, GetObjectCommand } = require("@aws-sdk/client-s3");
 const { pipeline } = require("stream");
 const { promisify } = require("util");
@@ -9,12 +8,12 @@ const { outputDir, TMP_DIR } = require('../../canvas-processing/videoProcessing'
 
 async function getVideoNames(req, res) {
   try {
-    const { storage_type, MetaData } = req.body;
-    console.log(MetaData);
-    if (storage_type === "AWS") {
-      const { awsAccessKeyId, awsSecretAccessKey, awsRegion, awsBucketName, folderPrefix } = MetaData;
+    const { storageType, storageMetaData } = req.body;
+    console.log(storageMetaData);
+    if (storageType === "AWS") {
+      const { awsAccessKeyId, awsSecretAccessKey, awsRegion, awsBucketName, folderPrefix } = storageMetaData;
       if (!awsAccessKeyId || !awsSecretAccessKey || !awsRegion || !awsBucketName) {
-        return res.status(400).json({ message: "Invalid or missing AWS MetaData." });
+        return res.status(400).json({ message: "Invalid or missing AWS storageMetaData." });
       }
       if (!folderPrefix) {
         return res.status(400).json({ message: "Missing folderPrefix in request body." });
@@ -43,11 +42,12 @@ async function getVideoNames(req, res) {
 
 async function downloadVideo(req, res) {
   try {
-    const { storage_type, MetaData, folderPrefix } = req.body;
-    if (storage_type === "AWS") {
-      const { awsAccessKeyId, awsSecretAccessKey, awsRegion, awsBucketName } = MetaData;
+    const { storageType, storageMetaData } = req.body;
+    const { folderPrefix } = req.body;
+    if (storageType === "AWS") {
+      const { awsAccessKeyId, awsSecretAccessKey, awsRegion, awsBucketName } = storageMetaData;
       if (!awsAccessKeyId || !awsSecretAccessKey || !awsRegion || !awsBucketName) {
-        return res.status(400).json({ message: "Invalid or missing AWS MetaData." });
+        return res.status(400).json({ message: "Invalid or missing AWS storageMetaData." });
       }
       const s3Client = new S3Client({
         region: awsRegion,
@@ -86,7 +86,6 @@ async function downloadVideo(req, res) {
           // Strip any S3 URLs from the m3u8 file - only keep segment filenames
           content = content.split('\n').map(line => {
             if (line.trim().endsWith('.ts')) {
-              // Extract just the filename from any URL or path
               const parts = line.trim().split('/');
               return parts[parts.length - 1];
             }

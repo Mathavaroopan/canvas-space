@@ -1,4 +1,3 @@
-// canvas-core/server.js
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
@@ -32,7 +31,7 @@ const aesController = require('./controllers/aesController');
 const s3Controller = require('./controllers/s3Controller');
 const dbController = require('./controllers/dbController');
 
-// Routes - create/modify/delete AES ( locks )
+// Routes - create/modify/delete AES (locks)
 app.post('/create-AES', aesController.createAES);
 app.post('/modify-AES', aesController.modifyAES);
 app.post('/delete-AES', aesController.deleteAES);
@@ -42,6 +41,8 @@ app.post('/download-video', s3Controller.downloadVideo);
 
 app.get('/get-lockId-by-contentId/:contentId', dbController.getLockIdByContentId);
 app.get('/get-lockjsonobject/:lockId', dbController.getLockJsonObject);
+// New API: Get lockId by inputVideoUrl
+app.post('/get-lockId-by-inputVideoUrl', dbController.getLockIdByInputVideoUrl);
 
 // Start the server.
 const PORT = process.env.PORT;

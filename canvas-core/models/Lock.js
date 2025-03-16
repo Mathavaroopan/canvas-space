@@ -21,7 +21,7 @@ const LockSchema = new Schema({
   OriginalContentUrl: { type: String, required: true },
   LockedContentUrl: { type: String, default: null },
   contentId: { type: String, required: true },
-  storage_type: {
+  storageType: {
     type: String,
     enum: ['AWS', 'GOOGLE_CLOUD', 'AZURE'],
     required: true,
