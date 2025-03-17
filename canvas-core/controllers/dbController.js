@@ -17,7 +17,7 @@ async function getLockIdByContentId(req, res) {
 async function getLockJsonObject(req, res) {
   try {
     const { lockId } = req.params;
-    const lock = await Lock.findOne({ _id: lockId });
+    const lock = await Lock.findById(lockId);
     if (!lock) {
       return res.status(404).json({ message: "Lock not found." });
     }
@@ -31,7 +31,7 @@ async function getLockJsonObject(req, res) {
         userName: lock.UserName,
         locks: lock.locks
       }
-    }
+    };
     return res.status(200).json({ result });
   } catch (error) {
     console.error("Error in getLockJsonObject:", error);
@@ -39,7 +39,6 @@ async function getLockJsonObject(req, res) {
   }
 }
 
-// New API: Get lockId by inputVideoUrl
 async function getLockIdByInputVideoUrl(req, res) {
   try {
     const { inputVideoUrl } = req.body;

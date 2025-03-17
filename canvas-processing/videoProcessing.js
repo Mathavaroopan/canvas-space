@@ -126,11 +126,14 @@ function generatePlaylistContent(segments, type) {
 
 /**
  * Creates two HLS playlists (normal and blackout) by processing the video.
+ * Accepts additional parameters for custom file names.
  * @param {string} inputPath 
  * @param {Array} blackoutSegments 
+ * @param {string} normalFileName - Desired file name for the normal playlist (e.g., "new-name.m3u8")
+ * @param {string} blackoutFileName - Desired file name for the blackout playlist (e.g., "new-blackout.m3u8")
  * @returns {object} { normalPlaylistPath, blackoutPlaylistPath }
  */
-function createM3U8WithExactSegments(inputPath, blackoutSegments) {
+function createM3U8WithExactSegments(inputPath, blackoutSegments, normalFileName, blackoutFileName) {
   const totalDuration = getVideoDuration(inputPath);
   const resolution = getVideoResolution(inputPath);
   const segments = buildSegments(totalDuration, blackoutSegments);
@@ -145,9 +148,9 @@ function createM3U8WithExactSegments(inputPath, blackoutSegments) {
   const normalPlaylistContent = generatePlaylistContent(segments, 'normal');
   const blackoutPlaylistContent = generatePlaylistContent(segments, 'blackout');
   
-  const normalPlaylistPath = path.join(outputDir, 'output.m3u8');
+  const normalPlaylistPath = path.join(outputDir, normalFileName);
   fs.writeFileSync(normalPlaylistPath, normalPlaylistContent);
-  const blackoutPlaylistPath = path.join(outputDir, 'blackout.m3u8');
+  const blackoutPlaylistPath = path.join(outputDir, blackoutFileName);
   fs.writeFileSync(blackoutPlaylistPath, blackoutPlaylistContent);
   
   return { normalPlaylistPath, blackoutPlaylistPath };
@@ -155,10 +158,9 @@ function createM3U8WithExactSegments(inputPath, blackoutSegments) {
 
 /**
  * Updates a playlist file's content by replacing local segment filenames with their corresponding S3 URLs.
- * This is used when creating the playlists to be uploaded to S3, not for local playlists.
- * @param {string} playlistPath Path to the local m3u8 file
- * @param {object} fileUrlMapping Mapping of local filenames to S3 URLs
- * @returns {string} Updated playlist content with S3 URLs for uploading to S3
+ * @param {string} playlistPath 
+ * @param {object} fileUrlMapping 
+ * @returns {string} Updated playlist content.
  */
 function updatePlaylistContent(playlistPath, fileUrlMapping) {
   const content = fs.readFileSync(playlistPath, 'utf8');
@@ -191,11 +193,15 @@ async function downloadM3U8Folder(s3Client, bucketName, folderKey) {
     if (obj.Key.endsWith('/')) continue;
     const filename = path.basename(obj.Key);
     const localFilePath = path.join(localFolder, filename);
+    console.log("Downloading:", obj.Key);
     const getObjectParams = { Bucket: bucketName, Key: obj.Key };
     const getObjectCommand = new GetObjectCommand(getObjectParams);
     const fileResponse = await s3Client.send(getObjectCommand);
     await streamPipeline(fileResponse.Body, fs.createWriteStream(localFilePath));
+    console.log(`Downloaded: ${filename}`);
   }
+  console.log("Download m3u8 is finished");
+  
   return localFolder;
 }
 
@@ -224,13 +230,18 @@ async function processSourceToLocalMp4(s3Client, bucketName, awsOriginalKey) {
 
   if (ext === '.m3u8') {
     const folderKey = path.dirname(awsOriginalKey) + '/';
+    console.log("downloading m3u8");
     const localFolder = await downloadM3U8Folder(s3Client, bucketName, folderKey);
+    console.log("download m3u8 is finished");
     const m3u8Filename = path.basename(awsOriginalKey);
     const localM3u8Path = path.join(localFolder, m3u8Filename);
+    console.log("sanitization starts");
     sanitizeLocalM3U8(localM3u8Path);
+    console.log("sanitization done");
     localMp4Path = path.join(TMP_DIR, `${Date.now()}-converted.mp4`);
     execSync(`ffmpeg -protocol_whitelist "file,http,https,tcp,tls" -i "${localM3u8Path}" -c copy "${localMp4Path}"`);
     fs.rmSync(localFolder, { recursive: true, force: true });
+    console.log("mp4 created");
   } else if (!ext) {
     let folderKey = awsOriginalKey;
     if (!folderKey.endsWith('/')) folderKey += '/';

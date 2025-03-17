@@ -40,7 +40,6 @@ async function uploadHlsFilesToS3(s3Client, bucketName, folder) {
   for (const file of files) {
     const filePath = path.join(localOutputDir, file);
     const fileStream = fs.createReadStream(filePath);
-    // Ensure folder ends with a slash.
     const s3Folder = folder.endsWith('/') ? folder : folder + '/';
     const key = s3Folder + file;
     const upload = new Upload({
