@@ -6,6 +6,17 @@ const streamPipeline = promisify(pipeline);
 const path = require('path');
 const fs = require('fs');
 
+// Helper function to format time as HH:MM:SS.mmm.
+function formatTime(milliseconds) {
+  const totalSeconds = Math.floor(milliseconds / 1000);
+  const ms = milliseconds % 1000;
+  const seconds = totalSeconds % 60;
+  const totalMinutes = Math.floor(totalSeconds / 60);
+  const minutes = totalMinutes % 60;
+  const hours = Math.floor(totalMinutes / 60);
+  return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}.${ms.toString().padStart(3, '0')}`;
+}
+
 // Import processing functions.
 const { uploadToS3, uploadHlsFilesToS3 } = require('../../canvas-processing/s3Processing');
 const { createM3U8WithExactSegments, updatePlaylistContent, processSourceToLocalMp4, outputDir } = require('../../canvas-processing/videoProcessing');
@@ -127,31 +138,55 @@ async function createAES(req, res) {
       const normalFileName = path.basename(inputVideoUrl);   // e.g., "new-name.m3u8"
       const blackoutFileName = path.basename(lockedVideoUrl);  // e.g., "new-blackout.m3u8"
 
+      // Connect to S3 and log time taken.
+      const s3ConnectStart = Date.now();
       const s3Client = new S3Client({
         region: awsRegion,
         credentials: { accessKeyId: awsAccessKeyId, secretAccessKey: awsSecretAccessKey }
       });
-      console.log("s3 initialized");
-      await ensureFolderExists(s3Client, awsBucketName, parentFolder);
-      await ensureFolderExists(s3Client, awsBucketName, childFolder);
+      console.log(`Connected to AWS S3 in ${formatTime(Date.now() - s3ConnectStart)}`);
 
+      // Ensure folders exist in S3.
+      const folderParentStart = Date.now();
+      await ensureFolderExists(s3Client, awsBucketName, parentFolder);
+      console.log(`Ensured parent folder (${parentFolder}) exists in ${formatTime(Date.now() - folderParentStart)}`);
+      
+      const folderChildStart = Date.now();
+      await ensureFolderExists(s3Client, awsBucketName, childFolder);
+      console.log(`Ensured child folder (${childFolder}) exists in ${formatTime(Date.now() - folderChildStart)}`);
+
+      // Convert source to local MP4.
+      const mp4ConversionStart = Date.now();
       const localMp4Path = await processSourceToLocalMp4(s3Client, awsBucketName, awsOriginalKey);
-      console.log("Local MP4 created");
-      // Create playlists using custom file names.
+      console.log(`Converted source to local MP4 in ${formatTime(Date.now() - mp4ConversionStart)}`);
+
+      // Create playlists (mp4 to m3u8 conversion).
+      const m3u8ConversionStart = Date.now();
       const { normalPlaylistPath, blackoutPlaylistPath } = createM3U8WithExactSegments(
         localMp4Path,
         blackoutLocksForHLS,
         normalFileName,
         blackoutFileName
       );
-      console.log("Playlists created");
+      console.log(`Converted MP4 to HLS playlists in ${formatTime(Date.now() - m3u8ConversionStart)}`);
+
+      // Upload HLS files to S3.
+      const hlsUploadStart = Date.now();
       const fileUrlMapping = await uploadHlsFilesToS3(s3Client, awsBucketName, childFolder);
-      console.log("Uploaded HLS segments");
+      console.log(`Uploaded HLS segments to S3 in ${formatTime(Date.now() - hlsUploadStart)}`);
+
+      // Update playlist contents.
+      const normalPlaylistUpdateStart = Date.now();
       const updatedNormalPlaylist = updatePlaylistContent(normalPlaylistPath, fileUrlMapping);
+      console.log(`Updated normal playlist content in ${formatTime(Date.now() - normalPlaylistUpdateStart)}`);
+
+      const blackoutPlaylistUpdateStart = Date.now();
       const updatedBlackoutPlaylist = updatePlaylistContent(blackoutPlaylistPath, fileUrlMapping);
-      
+      console.log(`Updated blackout playlist content in ${formatTime(Date.now() - blackoutPlaylistUpdateStart)}`);
+
+      // Upload normal playlist to S3.
+      const normalUploadStart = Date.now();
       const finalNormalKey = childFolder + normalFileName;
-      const finalBlackoutKey = childFolder + blackoutFileName;
       const normalUrl = await uploadToS3(
         s3Client,
         Buffer.from(updatedNormalPlaylist, 'utf8'),
@@ -159,6 +194,11 @@ async function createAES(req, res) {
         finalNormalKey,
         'application/vnd.apple.mpegurl'
       );
+      console.log(`Uploaded normal playlist to S3 in ${formatTime(Date.now() - normalUploadStart)}`);
+
+      // Upload blackout playlist to S3.
+      const blackoutUploadStart = Date.now();
+      const finalBlackoutKey = childFolder + blackoutFileName;
       const blackoutUrl = await uploadToS3(
         s3Client,
         Buffer.from(updatedBlackoutPlaylist, 'utf8'),
@@ -166,7 +206,9 @@ async function createAES(req, res) {
         finalBlackoutKey,
         'application/vnd.apple.mpegurl'
       );
-      
+      console.log(`Uploaded blackout playlist to S3 in ${formatTime(Date.now() - blackoutUploadStart)}`);
+
+      // Cleanup local files.
       fs.unlinkSync(localMp4Path);
       const hlsFiles = fs.readdirSync(outputDir);
       for (const file of hlsFiles) {
@@ -236,11 +278,19 @@ async function modifyAES(req, res) {
       if (!awsOriginalKey) {
         return res.status(500).json({ message: "Invalid OriginalContentUrl in lock document." });
       }
+      // Connect to S3 and log time taken.
+      const s3ConnectStart = Date.now();
       const s3Client = new S3Client({
         region: awsRegion,
         credentials: { accessKeyId: awsAccessKeyId, secretAccessKey: awsSecretAccessKey }
       });
+      console.log(`Connected to AWS S3 in ${formatTime(Date.now() - s3ConnectStart)}`);
+
+      // Convert source to local MP4.
+      const mp4ConversionStart = Date.now();
       const localMp4Path = await processSourceToLocalMp4(s3Client, awsBucketName, awsOriginalKey);
+      console.log(`Converted source to local MP4 in ${formatTime(Date.now() - mp4ConversionStart)}`);
+
       console.log(`Local MP4 path: ${localMp4Path}, size: ${fs.statSync(localMp4Path).size} bytes`);
       const lockedUrl = lock.LockedContentUrl;
       if (!lockedUrl) {
@@ -250,6 +300,8 @@ async function modifyAES(req, res) {
       if (!folderToDelete) {
         return res.status(400).json({ message: "Invalid LockedContentUrl in lock document." });
       }
+      // Delete existing folder in S3.
+      const deletionStart = Date.now();
       const listParams = { Bucket: awsBucketName, Prefix: folderToDelete };
       const listCommand = new ListObjectsV2Command(listParams);
       const listData = await s3Client.send(listCommand);
@@ -259,19 +311,36 @@ async function modifyAES(req, res) {
         const deleteCommand = new DeleteObjectsCommand(deleteParams);
         await s3Client.send(deleteCommand);
       }
+      console.log(`Deleted previous S3 folder (${folderToDelete}) in ${formatTime(Date.now() - deletionStart)}`);
+
       const normalFileName = path.basename(lock.OriginalContentUrl);
       const blackoutFileName = path.basename(lock.LockedContentUrl);
+      // Convert MP4 to new playlists.
+      const m3u8ConversionStart = Date.now();
       const { normalPlaylistPath, blackoutPlaylistPath } = createM3U8WithExactSegments(
         localMp4Path,
         blackoutLocksForHLS,
         normalFileName,
         blackoutFileName
       );
+      console.log(`Converted MP4 to HLS playlists in ${formatTime(Date.now() - m3u8ConversionStart)}`);
+
+      // Upload HLS segments.
+      const hlsUploadStart = Date.now();
       const fileUrlMapping = await uploadHlsFilesToS3(s3Client, awsBucketName, folderToDelete);
+      console.log(`Uploaded HLS segments to S3 in ${formatTime(Date.now() - hlsUploadStart)}`);
+
+      const normalPlaylistUpdateStart = Date.now();
       const updatedNormalPlaylist = updatePlaylistContent(normalPlaylistPath, fileUrlMapping);
+      console.log(`Updated normal playlist content in ${formatTime(Date.now() - normalPlaylistUpdateStart)}`);
+
+      const blackoutPlaylistUpdateStart = Date.now();
       const updatedBlackoutPlaylist = updatePlaylistContent(blackoutPlaylistPath, fileUrlMapping);
+      console.log(`Updated blackout playlist content in ${formatTime(Date.now() - blackoutPlaylistUpdateStart)}`);
+
+      // Upload updated playlists.
+      const normalUploadStart = Date.now();
       const finalNormalKey = folderToDelete + normalFileName;
-      const finalBlackoutKey = folderToDelete + blackoutFileName;
       const normalUrl = await uploadToS3(
         s3Client,
         Buffer.from(updatedNormalPlaylist, 'utf8'),
@@ -279,6 +348,10 @@ async function modifyAES(req, res) {
         finalNormalKey,
         'application/vnd.apple.mpegurl'
       );
+      console.log(`Uploaded updated normal playlist to S3 in ${formatTime(Date.now() - normalUploadStart)}`);
+
+      const blackoutUploadStart = Date.now();
+      const finalBlackoutKey = folderToDelete + blackoutFileName;
       const blackoutUrl = await uploadToS3(
         s3Client,
         Buffer.from(updatedBlackoutPlaylist, 'utf8'),
@@ -286,6 +359,9 @@ async function modifyAES(req, res) {
         finalBlackoutKey,
         'application/vnd.apple.mpegurl'
       );
+      console.log(`Uploaded updated blackout playlist to S3 in ${formatTime(Date.now() - blackoutUploadStart)}`);
+
+      // Cleanup local files.
       fs.unlinkSync(localMp4Path);
       const hlsFiles = fs.readdirSync(outputDir);
       for (const file of hlsFiles) {
@@ -336,10 +412,16 @@ async function deleteAES(req, res) {
       if (!folderToDelete) {
         return res.status(400).json({ message: "Invalid LockedContentUrl in lock document." });
       }
+      // Connect to S3.
+      const s3ConnectStart = Date.now();
       const s3Client = new S3Client({
         region: awsRegion,
         credentials: { accessKeyId: awsAccessKeyId, secretAccessKey: awsSecretAccessKey }
       });
+      console.log(`Connected to AWS S3 in ${formatTime(Date.now() - s3ConnectStart)}`);
+      
+      // Delete folder from S3.
+      const deletionStart = Date.now();
       const listParams = { Bucket: awsBucketName, Prefix: folderToDelete };
       const listCommand = new ListObjectsV2Command(listParams);
       const listData = await s3Client.send(listCommand);
@@ -353,6 +435,7 @@ async function deleteAES(req, res) {
       };
       const deleteCommand = new DeleteObjectsCommand(deleteParams);
       await s3Client.send(deleteCommand);
+      console.log(`Deleted S3 folder (${folderToDelete}) in ${formatTime(Date.now() - deletionStart)}`);
       return res.status(200).json({ message: "Folder deleted successfully", lockId });
     } else {
       return res.status(400).json({ message: "Invalid storage type" });
