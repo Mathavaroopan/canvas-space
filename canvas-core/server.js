@@ -40,9 +40,8 @@ app.post('/get-video-names', s3Controller.getVideoNames);
 app.post('/download-video', s3Controller.downloadVideo);
 
 app.get('/get-lockId-by-contentId/:contentId', dbController.getLockIdByContentId);
-app.get('/get-lockjsonobject/:lockId', dbController.getLockJsonObject);
-// New API: Get lockId by inputVideoUrl
-app.post('/get-lockId-by-inputVideoUrl', dbController.getLockIdByInputVideoUrl);
+app.get('/get-lockjsonobject-by-lockId/:lockId', dbController.getLockJsonObject);
+app.get('/get-lockjsonobject-by-inputVideoUrl/:inputVideoUrl', dbController.getLockIdByInputVideoUrl);
 
 // Start the server.
 const PORT = process.env.PORT;

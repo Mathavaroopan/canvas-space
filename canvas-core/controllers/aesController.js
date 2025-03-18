@@ -64,8 +64,6 @@ async function ensureFolderExists(s3Client, bucketName, folderKey) {
 async function createAES(req, res) {
   try {
     const { storageType, storageMetaData, inputVideoUrl, lockedVideoUrl, platformName, userName, contentId, locks } = req.body || {};
-    console.log("createAES");
-    console.log(req.body);
 
     if (!storageMetaData) {
       return res.status(400).json({ message: "Missing storageMetaData in request body." });
@@ -78,6 +76,11 @@ async function createAES(req, res) {
     }
     if (!platformName || !userName) {
       return res.status(400).json({ message: "Missing platformName or userName in request body." });
+    }
+
+    const lock = await Lock.findOne({ OriginalContentUrl: inputVideoUrl });
+        if (lock) {
+          return res.status(404).json({ message: "Locks are already created for the video. You can still add/modify/remove the locks using modify-AES API", lockId : lock._id });
     }
 
     // Query Platform and User collections.

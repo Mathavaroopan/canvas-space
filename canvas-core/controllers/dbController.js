@@ -41,15 +41,24 @@ async function getLockJsonObject(req, res) {
 
 async function getLockIdByInputVideoUrl(req, res) {
   try {
-    const { inputVideoUrl } = req.body;
-    if (!inputVideoUrl) {
-      return res.status(400).json({ message: "Missing inputVideoUrl in request body." });
-    }
+    const { inputVideoUrl } = req.params;
+    console.log(inputVideoUrl);
     const lock = await Lock.findOne({ OriginalContentUrl: inputVideoUrl });
     if (!lock) {
       return res.status(404).json({ message: "Lock not found." });
     }
-    return res.status(200).json({ lock_id: lock._id });
+    const result = {
+      lock_id: lock._id,
+      lockJsonObject: {
+        originalContentUrl: lock.OriginalContentUrl,
+        lockedContentUrl: lock.LockedContentUrl,
+        contentId: lock.contentId,
+        platformName: lock.PlatformName,
+        userName: lock.UserName,
+        locks: lock.locks
+      }
+    };
+    return res.status(200).json({ result });
   } catch (error) {
     console.error("Error in getLockIdByInputVideoUrl:", error);
     return res.status(500).json({ message: error.message });
