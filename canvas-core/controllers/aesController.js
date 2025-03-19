@@ -1,4 +1,4 @@
-const { execSync } = require('child_process');
+const { execSync } = require('child_process'); 
 const { S3Client, ListObjectsV2Command, DeleteObjectsCommand, HeadObjectCommand, PutObjectCommand } = require("@aws-sdk/client-s3");
 const { pipeline } = require("stream");
 const { promisify } = require("util");
@@ -15,6 +15,30 @@ function formatTime(milliseconds) {
   const minutes = totalMinutes % 60;
   const hours = Math.floor(totalMinutes / 60);
   return `${hours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}.${ms.toString().padStart(3, '0')}`;
+}
+
+// Helper function to compute blackout segments based on repeat parameters.
+// If a blackout lock contains a "repeat" object with an interval and duration,
+// this function returns an array of blackout segments (each with a startTime and endTime)
+// within the overall lock's startTime and endTime.
+function computeBlackoutSegments(lock) {
+  const startTime = Number(lock.startTime);
+  const endTime = Number(lock.endTime);
+  if (lock.repeat && lock.repeat.interval && lock.repeat.duration) {
+    const interval = Number(lock.repeat.interval);
+    const duration = Number(lock.repeat.duration);
+    let segments = [];
+    for (let t = startTime; t < endTime; t += interval) {
+      let segEnd = t + duration;
+      if (segEnd > endTime) {
+        segEnd = endTime;
+      }
+      segments.push({ startTime: t, endTime: segEnd });
+    }
+    return segments;
+  } else {
+    return [{ startTime, endTime }];
+  }
 }
 
 // Import processing functions.
@@ -78,10 +102,10 @@ async function createAES(req, res) {
       return res.status(400).json({ message: "Missing platformName or userName in request body." });
     }
 
-    const lock = await Lock.findOne({ OriginalContentUrl: inputVideoUrl });
-        if (lock) {
-          return res.status(404).json({ message: "Locks are already created for the video. You can still add/modify/remove the locks using modify-AES API", lockId : lock._id });
-    }
+    // const lock = await Lock.findOne({ OriginalContentUrl: inputVideoUrl });
+    // if (lock) {
+    //   return res.status(404).json({ message: "Locks are already created for the video. You can still add/modify/remove the locks using modify-AES API", lockId : lock._id });
+    // }
 
     // Query Platform and User collections.
     const platform = await Platform.findOne({ PlatformName: platformName });
@@ -97,10 +121,8 @@ async function createAES(req, res) {
     const allLocks = locks || [];
     const blackoutLocksForHLS = allLocks
       .filter(lock => lock.lock_type === 'blackout-lock')
-      .map(lock => ({
-        startTime: Number(lock.startTime),
-        endTime: Number(lock.endTime)
-      }));
+      .flatMap(lock => computeBlackoutSegments(lock));
+
     const dbLocks = allLocks.map(lock => {
       const base = {
         lock_type: lock.lock_type,
@@ -251,10 +273,7 @@ async function modifyAES(req, res) {
     const allNewLocks = newLocks || [];
     const blackoutLocksForHLS = allNewLocks
       .filter(lock => lock.lock_type === 'blackout-lock')
-      .map(lock => ({
-        startTime: Number(lock.startTime),
-        endTime: Number(lock.endTime)
-      }));
+      .flatMap(lock => computeBlackoutSegments(lock));
     const dbNewLocks = allNewLocks.map(lock => {
       const base = {
         lock_type: lock.lock_type,
