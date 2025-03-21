@@ -17,7 +17,7 @@ mongoose.connect(connectionString, {
 
 // Middleware.
 app.use(cors({
-  origin: ["http://localhost:5173", "http://localhost:8081", "https://canvas-demo-client.vercel.app/"],
+  origin: [],
   credentials: true,
 }));
 app.use(express.json());

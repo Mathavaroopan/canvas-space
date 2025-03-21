@@ -102,10 +102,10 @@ async function createAES(req, res) {
       return res.status(400).json({ message: "Missing platformName or userName in request body." });
     }
 
-    const lock = await Lock.findOne({ OriginalContentUrl: inputVideoUrl });
-    if (lock) {
-      return res.status(404).json({ message: "Locks are already created for the video. You can still add/modify/remove the locks using modify-AES API", lockId : lock._id });
-    }
+    // const lock = await Lock.findOne({ OriginalContentUrl: inputVideoUrl });
+    // if (lock) {
+    //   return res.status(404).json({ message: "Locks are already created for the video. You can still add/modify/remove the locks using modify-AES API", lockId : lock._id });
+    // }
 
     // Query Platform and User collections.
     const platform = await Platform.findOne({ PlatformName: platformName });
