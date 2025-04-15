@@ -417,10 +417,12 @@ async function deleteAES(req, res) {
     if (!lock) {
       return res.status(404).json({ message: "Lock not found." });
     }
+
     const contentId = lock.contentId;
     if (!contentId) {
       return res.status(400).json({ message: "Content ID not found in lock document." });
     }
+    // delete the record in the lock using lockid
     if (storageType === "AWS") {
       const { awsAccessKeyId, awsSecretAccessKey, awsRegion, awsBucketName } = storageMetaData;
       if (!awsAccessKeyId || !awsSecretAccessKey || !awsRegion || !awsBucketName) {

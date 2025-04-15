@@ -17,14 +17,38 @@ mongoose.connect(connectionString, {
 
 // Middleware.
 app.use(cors({
-  origin: [],
+  origin: ["http://localhost:5174", "http://localhost:8081", "https://canvas-demo-client.vercel.app/"],
   credentials: true,
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// app.use((req, res, next) => {
+//   res.header('Access-Control-Allow-Origin', '*');
+//   res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+//   res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
+//   next();
+// });
+
 // Serve static files from hls_output.
 app.use(express.static(path.join(__dirname, "hls_output")));
+
+// Import the Lock model.
+const Lock = require('./models/Lock');
+
+// DELETE endpoint to remove all records in the Lock collection.
+app.delete('/delete-all-locks', async (req, res) => {
+  try {
+    const result = await Lock.deleteMany({});
+    res.status(200).json({ 
+      message: 'All lock records deleted successfully.',
+      result
+    });
+  } catch (err) {
+    console.error('Error deleting lock records:', err);
+    res.status(500).json({ error: 'An error occurred while deleting lock records.' });
+  }
+});
 
 // Import controllers.
 const aesController = require('./controllers/aesController');
