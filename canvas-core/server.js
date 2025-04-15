@@ -54,6 +54,7 @@ app.delete('/delete-all-locks', async (req, res) => {
 const aesController = require('./controllers/aesController');
 const s3Controller = require('./controllers/s3Controller');
 const dbController = require('./controllers/dbController');
+const segmentController = require('./controllers/segmentController');
 
 // Routes - create/modify/delete AES (locks)
 app.post('/create-AES', aesController.createAES);
@@ -62,6 +63,7 @@ app.post('/delete-AES', aesController.deleteAES);
 
 app.post('/get-video-names', s3Controller.getVideoNames);
 app.post('/download-video', s3Controller.downloadVideo);
+app.post('/get-segment', segmentController.getSegment);
 
 app.get('/get-lockId-by-contentId/:contentId', dbController.getLockIdByContentId);
 app.get('/get-lockjsonobject-by-lockId/:lockId', dbController.getLockJsonObject);
