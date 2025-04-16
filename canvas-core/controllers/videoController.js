@@ -199,6 +199,24 @@ const downloadVideoV2 = async (req, res) => {
     }
     console.log(`Output directory: ${outputDir}`);
     
+    // Clear the output directory before downloading new files
+    console.log("Clearing hls_output directory...");
+    try {
+      const files = fs.readdirSync(outputDir);
+      for (const file of files) {
+        const filePath = path.join(outputDir, file);
+        // Check if it's a file (not a directory)
+        if (fs.statSync(filePath).isFile()) {
+          fs.unlinkSync(filePath);
+          console.log(`Deleted file: ${file}`);
+        }
+      }
+      console.log("All files in hls_output directory cleared");
+    } catch (clearError) {
+      console.error("Error clearing hls_output directory:", clearError);
+      // Continue with the download even if clearing fails
+    }
+    
     // Download and process locked m3u8
     const lockedFilename = path.basename(lock.LockedContentUrl);
     const lockedVideoKey = lock.LockedContentUrl.split('/').slice(3).join('/');

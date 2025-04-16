@@ -158,8 +158,29 @@ const getSegmentV2 = async (req, res) => {
       folderPath = lockedVideoUrl.replace(/^https?:\/\/[^\/]+\//, '').replace(/\/[^\/]+\.m3u8$/, '/');
     }
     
-    // Construct the segment name for the original segment using the segment number
-    const originalSegmentName = `segment_${blackoutSegmentNumber.padStart(3, '0')}.ts`;
+    // Check if the m3u8 filename is one of our special cases
+    let m3u8Filename;
+    try {
+      const url = new URL(lockedVideoUrl);
+      m3u8Filename = url.pathname.split('/').pop();
+    } catch (error) {
+      // Fallback method
+      m3u8Filename = lockedVideoUrl.split('/').pop();
+    }
+    
+    console.log(`M3U8 filename: ${m3u8Filename}`);
+    
+    // Determine original segment name based on m3u8 file type
+    let originalSegmentName;
+    
+    if (m3u8Filename === 'output.m3u8' || m3u8Filename === 'some-name.m3u8') {
+      // For output.m3u8 or some-name.m3u8, use segment_%03d.ts format
+      originalSegmentName = `segment_${blackoutSegmentNumber.padStart(3, '0')}.ts`;
+    } else {
+      // Default format for other m3u8 files
+      originalSegmentName = `segment_${blackoutSegmentNumber.padStart(3, '0')}.ts`;
+    }
+    
     const unlockSegmentName = `unlocked_${blackoutSegmentNumber.padStart(3, '0')}.ts`;
     const blackoutSegmentName = `blackout_${blackoutSegmentNumber.padStart(3, '0')}.ts`;
     
@@ -203,16 +224,6 @@ const getSegmentV2 = async (req, res) => {
     
     // Now, update the blackout.m3u8 file to replace the blackout segment with the unlocked segment
     try {
-      // Extract the m3u8 filename from the URL
-      let m3u8Filename;
-      try {
-        const url = new URL(lockedVideoUrl);
-        m3u8Filename = url.pathname.split('/').pop();
-      } catch (error) {
-        // Fallback method
-        m3u8Filename = lockedVideoUrl.split('/').pop();
-      }
-      
       // Path to the local m3u8 file
       const m3u8FilePath = path.join(hlsOutputDir, m3u8Filename);
       
@@ -230,7 +241,7 @@ const getSegmentV2 = async (req, res) => {
         // Write back the updated content
         fs.writeFileSync(m3u8FilePath, updatedContent);
         
-        console.log(`Updated blackout.m3u8 file: ${m3u8FilePath}`);
+        console.log(`Updated m3u8 file: ${m3u8FilePath}`);
         console.log(`Replaced ${blackoutSegmentName} with ${unlockSegmentName}`);
       } else {
         console.log(`M3U8 file not found: ${m3u8FilePath}`);
