@@ -31,7 +31,8 @@ app.use(express.urlencoded({ extended: true }));
 // });
 
 // Serve static files from hls_output.
-app.use(express.static(path.join(__dirname, "hls_output")));
+app.use('/hls_output', express.static(path.join(__dirname, "../hls_output")));
+app.use('/', express.static(path.join(__dirname, "../hls_output")));
 
 // Import the Lock model.
 const Lock = require('./models/Lock');
@@ -55,6 +56,8 @@ const aesController = require('./controllers/aesController');
 const s3Controller = require('./controllers/s3Controller');
 const dbController = require('./controllers/dbController');
 const segmentController = require('./controllers/segmentController');
+const { downloadVideoV2 } = require('./controllers/videoController');
+const { getSegment, getSegmentV2 } = require('./controllers/segmentController');
 
 // Routes - create/modify/delete AES (locks)
 app.post('/create-AES', aesController.createAES);
@@ -63,11 +66,15 @@ app.post('/delete-AES', aesController.deleteAES);
 
 app.post('/get-video-names', s3Controller.getVideoNames);
 app.post('/download-video', s3Controller.downloadVideo);
-app.post('/get-segment', segmentController.getSegment);
+app.post('/api/get-segment', getSegment);
+app.post('/api/get-segment-v2', getSegmentV2);
 
 app.get('/get-lockId-by-contentId/:contentId', dbController.getLockIdByContentId);
 app.get('/get-lockjsonobject-by-lockId/:lockId', dbController.getLockJsonObject);
 app.get('/get-lockjsonobject-by-inputVideoUrl/:inputVideoUrl', dbController.getLockIdByInputVideoUrl);
+
+// Video download v2 endpoint
+app.post('/download-video-v2', downloadVideoV2);
 
 // Start the server.
 const PORT = process.env.PORT;

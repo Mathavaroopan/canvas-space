@@ -1,0 +1,16 @@
+#EXTM3U
+#EXT-X-VERSION:3
+#EXT-X-TARGETDURATION:20
+#EXT-X-MEDIA-SEQUENCE:0
+#EXT-X-PLAYLIST-TYPE:VOD
+#EXTINF:10.000000,
+https://canvasapitest.s3.amazonaws.com/AES-videos/get-segment-testing/segment_000.ts
+#EXTINF:10.000000,
+https://canvasapitest.s3.amazonaws.com/AES-videos/get-segment-testing/segment_001.ts
+#EXTINF:10.000000,
+https://canvasapitest.s3.amazonaws.com/AES-videos/get-segment-testing/segment_002.ts
+#EXTINF:20.000000,
+https://canvasapitest.s3.amazonaws.com/AES-videos/get-segment-testing/segment_003.ts
+#EXTINF:9.164444,
+https://canvasapitest.s3.amazonaws.com/AES-videos/get-segment-testing/segment_004.ts
+#EXT-X-ENDLIST
