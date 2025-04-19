@@ -59,6 +59,9 @@ const segmentController = require('./controllers/segmentController');
 const { downloadVideoV2 } = require('./controllers/videoController');
 const { getSegment, getSegmentV2 } = require('./controllers/segmentController');
 
+// Import form routes
+const formRoutes = require('./routes/formRoutes');
+
 // Routes - create/modify/delete AES (locks)
 app.post('/create-AES', aesController.createAES);
 app.post('/modify-AES', aesController.modifyAES);
@@ -72,6 +75,10 @@ app.post('/api/get-segment-v2', getSegmentV2);
 app.get('/get-lockId-by-contentId/:contentId', dbController.getLockIdByContentId);
 app.get('/get-lockjsonobject-by-lockId/:lockId', dbController.getLockJsonObject);
 app.get('/get-lockjsonobject-by-inputVideoUrl/:inputVideoUrl', dbController.getLockIdByInputVideoUrl);
+app.get('/get-all-videos', dbController.getAllVideos);
+
+// Use form routes
+app.use('/api', formRoutes);
 
 // Video download v2 endpoint
 app.post('/download-video-v2', downloadVideoV2);

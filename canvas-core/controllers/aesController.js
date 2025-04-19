@@ -87,7 +87,7 @@ async function ensureFolderExists(s3Client, bucketName, folderKey) {
 // POST /create-AES
 async function createAES(req, res) {
   try {
-    const { storageType, storageMetaData, inputVideoUrl, lockedVideoUrl, platformName, userName, contentId, locks } = req.body || {};
+    const { storageType, storageMetaData, inputVideoUrl, lockedVideoUrl, contentId, platformName, userName, locks } = req.body || {};
 
     if (!storageMetaData) {
       return res.status(400).json({ message: "Missing storageMetaData in request body." });
@@ -98,6 +98,8 @@ async function createAES(req, res) {
     if (!contentId) {
       return res.status(400).json({ message: "Missing contentId." });
     }
+
+
     if (!platformName || !userName) {
       return res.status(400).json({ message: "Missing platformName or userName in request body." });
     }
@@ -460,6 +462,7 @@ async function deleteAES(req, res) {
       const deleteCommand = new DeleteObjectsCommand(deleteParams);
       await s3Client.send(deleteCommand);
       console.log(`Deleted S3 folder (${folderToDelete}) in ${formatTime(Date.now() - deletionStart)}`);
+      await Lock.findOneAndDelete({ lockId });
       return res.status(200).json({ message: "Folder deleted successfully", lockId });
     } else {
       return res.status(400).json({ message: "Invalid storage type" });

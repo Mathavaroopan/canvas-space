@@ -65,8 +65,55 @@ async function getLockIdByInputVideoUrl(req, res) {
   }
 }
 
+async function getAllVideos(req, res) {
+  try {
+    const locks = await Lock.find({});
+    if (!locks || locks.length === 0) {
+      return res.status(200).json({ 
+        success: true, 
+        videos: [],
+        message: "No videos found."
+      });
+    }
+
+    const videos = locks.map(lock => {
+      // Extract the videoName from the lockedVideoUrl
+      // Example: if URL is "https://canvasapitest.s3.us-east-1.amazonaws.com/AES-videos/ui-testing/blackout.m3u8"
+      // Then videoName should be "ui-testing"
+      let videoName = "";
+      if (lock.LockedContentUrl) {
+        const urlParts = lock.LockedContentUrl.split('/');
+        // The parent folder of m3u8 file should be the videoName
+        if (urlParts.length >= 2) {
+          videoName = urlParts[urlParts.length - 2];
+        }
+      }
+
+      return {
+        videoName,
+        lockedVideoUrl: lock.LockedContentUrl,
+        originalUrl: lock.OriginalContentUrl,
+        contentId: lock.contentId
+      };
+    });
+
+    return res.status(200).json({ 
+      success: true, 
+      videos, 
+      count: videos.length 
+    });
+  } catch (error) {
+    console.error("Error in getAllVideos:", error);
+    return res.status(500).json({ 
+      success: false, 
+      message: error.message 
+    });
+  }
+}
+
 module.exports = {
   getLockIdByContentId,
   getLockJsonObject,
-  getLockIdByInputVideoUrl
+  getLockIdByInputVideoUrl,
+  getAllVideos
 };
