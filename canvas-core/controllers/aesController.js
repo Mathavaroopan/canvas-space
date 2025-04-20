@@ -125,6 +125,8 @@ async function createAES(req, res) {
       .filter(lock => lock.lock_type === 'blackout-lock')
       .flatMap(lock => computeBlackoutSegments(lock));
 
+    console.log("Received locks for processing:", allLocks);
+    
     const dbLocks = allLocks.map(lock => {
       const base = {
         lock_type: lock.lock_type,
@@ -134,8 +136,15 @@ async function createAES(req, res) {
       
       // Add formId to blackout-lock
       if (lock.lock_type === 'blackout-lock' && lock.formId) {
+        console.log(`Processing lock with formId: ${lock.formId}`);
         base.formId = lock.formId;
+      } else if (lock.lock_type === 'form-lock') {
+        base.customJson = lock.customJson;
+      } else if (lock.lock_type === 'replacement-video-lock') {
+        base.replacement_video_url = lock.replacement_video_url;
       }
+      
+      console.log("Processed lock for DB:", base);
       return base;
     });
 
@@ -221,7 +230,7 @@ async function createAES(req, res) {
         finalNormalKey,
         'application/vnd.apple.mpegurl'
       );
-      console.log(`Uploaded normal playlist to S3 in ${formatTime(Date.now() - normalUploadStart)}`);
+      console.log(`Uploaded updated normal playlist to S3 in ${formatTime(Date.now() - normalUploadStart)}`);
 
       // Upload blackout playlist to S3.
       const blackoutUploadStart = Date.now();
@@ -250,7 +259,6 @@ async function createAES(req, res) {
         storageType: storageType,
         locks: dbLocks
       });
-      console.log("newLock", newLock);
       await newLock.save();
 
       return res.status(201).json({
@@ -396,9 +404,12 @@ async function modifyAES(req, res) {
       for (const file of hlsFiles) {
         fs.unlinkSync(path.join(outputDir, file));
       }
+      
+      // Update the existing lock with new locks
       lock.locks = dbNewLocks;
       lock.LockedContentUrl = blackoutUrl;
       await lock.save();
+      
       return res.status(200).json({
         message: "Lock modified successfully",
         lock_id: lock._id,
@@ -467,7 +478,7 @@ async function deleteAES(req, res) {
       const deleteCommand = new DeleteObjectsCommand(deleteParams);
       await s3Client.send(deleteCommand);
       console.log(`Deleted S3 folder (${folderToDelete}) in ${formatTime(Date.now() - deletionStart)}`);
-      await Lock.findOneAndDelete({ lockId });
+      await Lock.findByIdAndDelete(lockId);
       return res.status(200).json({ message: "Folder deleted successfully", lockId });
     } else {
       return res.status(400).json({ message: "Invalid storage type" });

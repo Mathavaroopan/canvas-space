@@ -61,6 +61,7 @@ const { getSegment, getSegmentV2 } = require('./controllers/segmentController');
 
 // Import form routes
 const formRoutes = require('./routes/formRoutes');
+const formSubmissionRoutes = require('./routes/formSubmissionRoutes');
 
 // Routes - create/modify/delete AES (locks)
 app.post('/create-AES', aesController.createAES);
@@ -78,7 +79,16 @@ app.get('/get-lockjsonobject-by-inputVideoUrl/:inputVideoUrl', dbController.getL
 app.get('/get-all-videos', dbController.getAllVideos);
 
 // Use form routes
+console.log("Registering form routes at /api prefix");
 app.use('/api', formRoutes);
+app.use('/api', formSubmissionRoutes);
+console.log("Form routes registered");
+
+// Enable CORS debugging
+app.use((req, res, next) => {
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.url}`);
+  next();
+});
 
 // Video download v2 endpoint
 app.post('/download-video-v2', downloadVideoV2);

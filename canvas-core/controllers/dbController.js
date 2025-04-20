@@ -19,28 +19,39 @@ async function getLockIdByContentId(req, res) {
 async function getLockJsonObject(req, res) {
   try {
     const { lockId } = req.params;
+    console.log(`Getting lock JSON object for lockId: ${lockId}`);
     
     // Find the lock with populated form data for each lock with formId
     const lock = await Lock.findById(lockId);
     
     if (!lock) {
+      console.log(`Lock not found for ID: ${lockId}`);
       return res.status(404).json({ message: "Lock not found." });
     }
     
+    console.log(`Found lock with ${lock.locks.length} segments`);
+    
     // Process each lock to include form data
-    const processedLocks = await Promise.all(lock.locks.map(async (lockItem) => {
+    const processedLocks = await Promise.all(lock.locks.map(async (lockItem, index) => {
       const lockData = lockItem.toObject();
+      console.log(`Processing lock segment ${index}:`, lockData);
       
       // If the lock has a formId, get the form name
       if (lockData.formId) {
+        console.log(`Lock segment ${index} has formId: ${lockData.formId}`);
         try {
           const form = await Form.findById(lockData.formId);
           if (form) {
+            console.log(`Found form for segment ${index}: ${form.name}`);
             lockData.formName = form.name;
+          } else {
+            console.log(`Form not found for ID: ${lockData.formId}`);
           }
         } catch (err) {
           console.error(`Error fetching form for formId ${lockData.formId}:`, err);
         }
+      } else {
+        console.log(`Lock segment ${index} has no formId`);
       }
       
       return {
@@ -64,6 +75,7 @@ async function getLockJsonObject(req, res) {
       }
     };
     
+    console.log(`Returning result with ${processedLocks.length} processed locks`);
     return res.status(200).json({ result });
   } catch (error) {
     console.error("Error in getLockJsonObject:", error);

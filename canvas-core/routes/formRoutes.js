@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const Form = require('../models/Form');
+const mongoose = require('mongoose');
 
 // Create a new form
 router.post('/forms', async (req, res) => {
@@ -55,16 +56,27 @@ router.get('/forms', async (req, res) => {
 // Get a specific form by ID
 router.get('/forms/:id', async (req, res) => {
   try {
-    const form = await Form.findById(req.params.id);
+    const formId = req.params.id;
+    console.log(`Looking up form with ID: ${formId}`);
+    
+    // Check if the ID is a valid mongoose ObjectId
+    if (!mongoose.Types.ObjectId.isValid(formId)) {
+      console.log(`Invalid form ID format: ${formId}`);
+      return res.status(400).json({ message: 'Invalid form ID format' });
+    }
+    
+    const form = await Form.findById(formId);
+    console.log(`Form lookup result:`, form ? 'Found' : 'Not found');
     
     if (!form) {
       return res.status(404).json({ message: 'Form not found' });
     }
     
+    console.log(`Returning form: ${form.name} with ${form.elements.length} elements`);
     res.json({ form });
   } catch (error) {
     console.error('Error fetching form:', error);
-    res.status(500).json({ message: 'Server error', error: error.message });
+    res.status(500).json({ message: 'Server error', error: error.message, stack: error.stack });
   }
 });
 
