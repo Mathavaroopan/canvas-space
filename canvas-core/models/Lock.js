@@ -40,10 +40,11 @@ LockSchema.path('locks').discriminator('replacement-video-lock',
   }, { _id: false })
 );
 
-// For "blackout-lock": add endtime.
+// For "blackout-lock": add endtime and formId.
 LockSchema.path('locks').discriminator('blackout-lock',
   new Schema({
-    endtime: { type: Number, required: true }
+    endtime: { type: Number, required: true },
+    formId: { type: Schema.Types.ObjectId, ref: 'Form', default: null }
   }, { _id: false })
 );
 

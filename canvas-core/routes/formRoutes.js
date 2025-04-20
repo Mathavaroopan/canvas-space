@@ -1,12 +1,11 @@
 const express = require('express');
 const router = express.Router();
 const Form = require('../models/Form');
-const auth = require('../middleware/auth');
 
 // Create a new form
-router.post('/forms', auth, async (req, res) => {
+router.post('/forms', async (req, res) => {
   try {
-    const { name, elements } = req.body;
+    const { name, elements, userId } = req.body;
     
     if (!name) {
       return res.status(400).json({ message: 'Form name is required' });
@@ -19,7 +18,7 @@ router.post('/forms', auth, async (req, res) => {
     const form = new Form({
       name,
       elements,
-      userId: req.user.id
+      userId: userId || '000000000000000000000000' // Default user ID if not provided
     });
     
     await form.save();
@@ -34,10 +33,18 @@ router.post('/forms', auth, async (req, res) => {
   }
 });
 
-// Get all forms for the authenticated user
-router.get('/forms', auth, async (req, res) => {
+// Get all forms
+router.get('/forms', async (req, res) => {
   try {
-    const forms = await Form.find({ userId: req.user.id }).sort({ updatedAt: -1 });
+    const { userId } = req.query;
+    let query = {};
+    
+    // If userId is provided, filter by it, otherwise get all forms
+    if (userId) {
+      query.userId = userId;
+    }
+    
+    const forms = await Form.find(query).sort({ updatedAt: -1 });
     res.json({ forms });
   } catch (error) {
     console.error('Error fetching forms:', error);
@@ -46,9 +53,9 @@ router.get('/forms', auth, async (req, res) => {
 });
 
 // Get a specific form by ID
-router.get('/forms/:id', auth, async (req, res) => {
+router.get('/forms/:id', async (req, res) => {
   try {
-    const form = await Form.findOne({ _id: req.params.id, userId: req.user.id });
+    const form = await Form.findById(req.params.id);
     
     if (!form) {
       return res.status(404).json({ message: 'Form not found' });
@@ -62,7 +69,7 @@ router.get('/forms/:id', auth, async (req, res) => {
 });
 
 // Update a form
-router.put('/forms/:id', auth, async (req, res) => {
+router.put('/forms/:id', async (req, res) => {
   try {
     const { name, elements } = req.body;
     
@@ -74,7 +81,7 @@ router.put('/forms/:id', auth, async (req, res) => {
       return res.status(400).json({ message: 'Form must have at least one element' });
     }
     
-    const form = await Form.findOne({ _id: req.params.id, userId: req.user.id });
+    const form = await Form.findById(req.params.id);
     
     if (!form) {
       return res.status(404).json({ message: 'Form not found' });
@@ -97,9 +104,9 @@ router.put('/forms/:id', auth, async (req, res) => {
 });
 
 // Delete a form
-router.delete('/forms/:id', auth, async (req, res) => {
+router.delete('/forms/:id', async (req, res) => {
   try {
-    const form = await Form.findOne({ _id: req.params.id, userId: req.user.id });
+    const form = await Form.findById(req.params.id);
     
     if (!form) {
       return res.status(404).json({ message: 'Form not found' });

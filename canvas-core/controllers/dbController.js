@@ -1,4 +1,6 @@
 const Lock = require('../models/Lock');
+const Form = require('../models/Form');
+const mongoose = require('mongoose');
 
 async function getLockIdByContentId(req, res) {
   try {
@@ -17,10 +19,39 @@ async function getLockIdByContentId(req, res) {
 async function getLockJsonObject(req, res) {
   try {
     const { lockId } = req.params;
+    
+    // Find the lock with populated form data for each lock with formId
     const lock = await Lock.findById(lockId);
+    
     if (!lock) {
       return res.status(404).json({ message: "Lock not found." });
     }
+    
+    // Process each lock to include form data
+    const processedLocks = await Promise.all(lock.locks.map(async (lockItem) => {
+      const lockData = lockItem.toObject();
+      
+      // If the lock has a formId, get the form name
+      if (lockData.formId) {
+        try {
+          const form = await Form.findById(lockData.formId);
+          if (form) {
+            lockData.formName = form.name;
+          }
+        } catch (err) {
+          console.error(`Error fetching form for formId ${lockData.formId}:`, err);
+        }
+      }
+      
+      return {
+        starttime: lockData.starttime,
+        endtime: lockData.endtime,
+        lock_type: lockData.lock_type,
+        formId: lockData.formId || null,
+        formName: lockData.formName || null
+      };
+    }));
+    
     const result = {
       lock_id: lockId,
       lockJsonObject: {
@@ -29,9 +60,10 @@ async function getLockJsonObject(req, res) {
         contentId: lock.contentId,
         platformName: lock.PlatformName,
         userName: lock.UserName,
-        locks: lock.locks
+        locks: processedLocks
       }
     };
+    
     return res.status(200).json({ result });
   } catch (error) {
     console.error("Error in getLockJsonObject:", error);
@@ -47,6 +79,32 @@ async function getLockIdByInputVideoUrl(req, res) {
     if (!lock) {
       return res.status(404).json({ message: "Lock not found." });
     }
+    
+    // Process each lock to include form data
+    const processedLocks = await Promise.all(lock.locks.map(async (lockItem) => {
+      const lockData = lockItem.toObject();
+      
+      // If the lock has a formId, get the form name
+      if (lockData.formId) {
+        try {
+          const form = await Form.findById(lockData.formId);
+          if (form) {
+            lockData.formName = form.name;
+          }
+        } catch (err) {
+          console.error(`Error fetching form for formId ${lockData.formId}:`, err);
+        }
+      }
+      
+      return {
+        starttime: lockData.starttime,
+        endtime: lockData.endtime,
+        lock_type: lockData.lock_type,
+        formId: lockData.formId || null,
+        formName: lockData.formName || null
+      };
+    }));
+    
     const result = {
       lock_id: lock._id,
       lockJsonObject: {
@@ -55,9 +113,10 @@ async function getLockIdByInputVideoUrl(req, res) {
         contentId: lock.contentId,
         platformName: lock.PlatformName,
         userName: lock.UserName,
-        locks: lock.locks
+        locks: processedLocks
       }
     };
+    
     return res.status(200).json({ result });
   } catch (error) {
     console.error("Error in getLockIdByInputVideoUrl:", error);

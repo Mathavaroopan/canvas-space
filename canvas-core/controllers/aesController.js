@@ -131,10 +131,10 @@ async function createAES(req, res) {
         starttime: Number(lock.startTime),
         endtime: Number(lock.endTime)
       };
-      if (lock.lock_type === 'form-lock') {
-        base.customJson = lock.customJson;
-      } else if (lock.lock_type === 'replacement-video-lock') {
-        base.replacement_video_url = lock.replacement_video_url;
+      
+      // Add formId to blackout-lock
+      if (lock.lock_type === 'blackout-lock' && lock.formId) {
+        base.formId = lock.formId;
       }
       return base;
     });
@@ -250,6 +250,7 @@ async function createAES(req, res) {
         storageType: storageType,
         locks: dbLocks
       });
+      console.log("newLock", newLock);
       await newLock.save();
 
       return res.status(201).json({
@@ -282,7 +283,11 @@ async function modifyAES(req, res) {
         starttime: Number(lock.startTime),
         endtime: Number(lock.endTime)
       };
-      if (lock.lock_type === 'form-lock') {
+      
+      // Add formId to blackout-lock
+      if (lock.lock_type === 'blackout-lock' && lock.formId) {
+        base.formId = lock.formId;
+      } else if (lock.lock_type === 'form-lock') {
         base.customJson = lock.customJson;
       } else if (lock.lock_type === 'replacement-video-lock') {
         base.replacement_video_url = lock.replacement_video_url;
